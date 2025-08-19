@@ -1,5 +1,6 @@
 /* Reset CSS */
-html, body {
+html,
+body {
     width: 100%;
     height: 100%;
     margin: 0;
@@ -9,11 +10,11 @@ html, body {
     flex-direction: column;
     text-align: center;
 }
-  
+
 header {
     display: flex;
     justify-content: space-between;
-    align-items: center; 
+    align-items: center;
     padding: 1vh 10vh;
     max-height: 7%;
     border-bottom: 1px solid #ddece4;
@@ -27,7 +28,7 @@ header {
 
 .rigth-corner {
     display: flex;
-    align-items: center; 
+    align-items: center;
     gap: 4vh;
 }
 
@@ -61,14 +62,12 @@ header {
     margin-top: 3.5vh;
 }
 
-#map { 
-    height: 35rem; 
+#map {
+    height: 35rem;
     width: 55rem;
 }
 
-#select {
-
-}
+#select {}
 
 .controls {
     margin-top: 10vh;
@@ -90,13 +89,13 @@ header {
 }
 
 .controls form {
-   margin: 3vh 6vh;
+    margin: 3vh 6vh;
 }
 
 .controls form input {
     margin: 2.5vh 0;
-    height:2vh; 
-    width:2vh;
+    height: 2vh;
+    width: 2vh;
 }
 
 .controls form label {
@@ -104,9 +103,9 @@ header {
     margin-left: 1.5vh;
 }
 
-button {
+.segmentation-btn {
     background-color: #187318;
-    color: white;
+    color: rgb(255, 255, 255);
     border: none;
     width: 20vh;
     height: 8vh;
@@ -123,22 +122,180 @@ button:hover {
     background-color: #08a224;
 }
 
+.apply-class-btn {
+    background-color: #ffffff;
+    color: #007406;
+    border: 1px solid #187318;
+    font-size: 18px;
+    width: 10vh;
+    height: 4vh;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.apply-class-btn:hover {
+    background-color: #cce2d0;
+}
+
+.save-class-btn {
+    background-color: #187318;
+    color: rgb(255, 255, 255);
+    border: none;
+    width: 24vh;
+    height: 7vh;
+    font-size: 2vh;
+    border-radius: 10px;
+    cursor: pointer;
+    margin: 0 auto 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.new-class {
+    display: flex;
+    align-items: center;
+    justify-content:space-around;
+}
+
+.classification-hub {
+    margin-top: 80px;
+}
+
+.classification-hub p {
+    font-size: 18px;
+}
+
+/* Estilo geral dos inputs */
+.classification-hub input[type="text"],
+.classification-hub input[type="color"] {
+    padding: 5px 5px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Foco no input */
+.classification-hub input[type="text"]:focus,
+.classification-hub input[type="color"]:focus {
+    border-color: #0096d5;
+    box-shadow: 0 0 3px #0096d5;
+}
+
+/* Especificamente para o color picker */
+.classification-hub input[type="color"] {
+    padding: 0;
+    /* remove padding interno padrão */
+    width: 30px;
+    /* tamanho quadrado */
+    height: 30px;
+    border: none;
+    cursor: pointer;
+}
+
+/* Para deixar mais arredondado e visual moderno */
+.classification-hub input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+.classification-hub input[type="color"]::-webkit-color-swatch {
+    border-radius: 6px;
+    border: 1px solid #ffffff;
+}
+
+.classification-hub label {
+    display: flex;
+    align-items: center;
+    /* alinha verticalmente */
+    gap: 6px;
+    /* espaço entre o texto e o input */
+    font-size: 16px;
+}
+
 #btnSegmentar:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-  pointer-events: none;
+    cursor: not-allowed;
+    opacity: 0.6;
+    pointer-events: none;
 }
 
 .spinner {
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  border: 3px solid #adffc3;
-  border-top: 3px solid #007406;
-  border-radius: 50%;
-  animation: spin 0.5s linear infinite;
-  margin:auto;
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 3px solid #adffc3;
+    border-top: 3px solid #007406;
+    border-radius: 50%;
+    animation: spin 0.5s linear infinite;
+    margin: auto;
 }
+
 @keyframes spin {
-  to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.all-classes p {
+    font-size: 18px;
+}
+
+.all-classes {
+    border: 1px solid #d9e4d9;
+    border-radius: 10px;
+    margin-top: 30px;
+    margin-bottom: 30px;
+    height: 350px;
+    padding: 10px;
+    overflow-y: auto; /* adiciona rolagem se necessário */
+}
+
+.all-classes ul {
+    list-style: none; 
+    padding: 10px;
+    margin: 0;
+}
+
+.all-classes li {
+    display: flex;
+    align-items: center;   /* centraliza verticalmente */
+    justify-content: flex-start; /* alinha todos à esquerda */
+    gap: 4px;              /* espaço entre quadradinho e texto */
+    padding: 4px 10px;     /* padding interno menor */
+    font-size: 16px;
+    border-bottom: 1px solid #eeeeee;
+}
+
+/* Quadradinho da cor */
+.all-classes li .color-box {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid #ececec;
+    flex-shrink: 0;
+}
+
+/* Nome da classe em preto */
+.all-classes li .class-name {
+    color: #000;
+    flex-grow: 1;
+}
+
+.all-classes li button {
+    margin-left: 4px;      /* pequeno espaço entre texto e botão */
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.all-classes li button:hover {
+    background-color: #c0392b;
 }

@@ -27,8 +27,8 @@ OUTPUT_DIR = './SENTINEL2_BANDAS'
 # === BAIXAR BANDAS ===
 def baixar_bandas_sentinel(output_dir=OUTPUT_DIR, dias=60, resolucao=30, bbox=None):
     config = SHConfig()
-    config.sh_client_id = 'b38dba7b-11a9-43b1-8e86-688ba3ac619a'
-    config.sh_client_secret = 'Z0h1jEGidbmLvvDbrLu1HctBmDKrNa8o'
+    config.sh_client_id = '47a99045-2354-4408-aaa3-d8066ef4650d'
+    config.sh_client_secret = 'AY9DOuGxFcwaH969RFCqIdKPAZZZqGm5'
 
     hoje = datetime.utcnow().date()
 

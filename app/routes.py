@@ -53,3 +53,14 @@ def servir_banda(nome):
     if os.path.exists(os.path.join(pasta_absoluta, nome)):
         return send_from_directory(pasta_absoluta, nome)
     return 'Arquivo não encontrado', 404
+
+@app.route("/salvar_classificacao", methods=["POST"])
+def salvar_classificacao():
+    data = request.get_json()
+    path_out = "./SENTINEL2_BANDAS/classificado.geojson"
+
+    gdf = gpd.GeoDataFrame.from_features(data["features"])
+    gdf.to_file(path_out, driver="GeoJSON")
+
+    return jsonify({"status": "ok", "path": path_out})
+

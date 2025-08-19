@@ -68,10 +68,19 @@
             </select>
         </div>
 
-        <div class="controls">
-            <h1> Escolha a classe </h1>
+        <div class="classification-hub">
+            <p>Crie uma nova classe e selecione os polígonos referentes</p>
+            <div class="new-class">
+                <label>Classe: <input id="className" type="text"></label>
+                <label>Cor: <input id="classColor" type="color" value="#00ff00"></label>
+                <button class="apply-class-btn" onclick="applyClass()">Aplicar</button>
+            </div>
 
-            <button id="btnSegmentar"> FINALIZAR </button>
+            <div class="all-classes">
+                <p>Classes Criadas</p>
+                <ul id="class-list"></ul>
+            </div>
+            <button class="save-class-btn" onclick="salvar()">Salvar classificação</button>
         </div>
     </div>
 </body>
