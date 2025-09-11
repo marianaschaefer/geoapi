@@ -12,3 +12,4 @@ SENTINEL2_BANDAS/**/*.aux.xml
 SENTINEL2_BANDAS/**/*.idx
 SENTINEL2_BANDAS/**/*.SAFE/
 !SENTINEL2_BANDAS/**/*.geojson
+/.venv/
