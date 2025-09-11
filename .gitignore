@@ -1,3 +1,14 @@
 # Ignorar pastas específicas
 venv/
-SENTINEL2_BANDAS/
+SENTINEL2_BANDAS/.venv/
+__pycache__/
+*.pyc
+.env
+SENTINEL2_BANDAS/**/*.tif
+SENTINEL2_BANDAS/**/*.tiff
+SENTINEL2_BANDAS/**/*.jp2
+SENTINEL2_BANDAS/**/*.ovr
+SENTINEL2_BANDAS/**/*.aux.xml
+SENTINEL2_BANDAS/**/*.idx
+SENTINEL2_BANDAS/**/*.SAFE/
+!SENTINEL2_BANDAS/**/*.geojson
