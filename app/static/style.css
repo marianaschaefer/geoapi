@@ -1,4 +1,6 @@
-/* Reset CSS */
+/* ===================== */
+/* Reset CSS (SEU ORIGINAL) */
+/* ===================== */
 html,
 body {
     width: 100%;
@@ -190,19 +192,15 @@ button:hover {
 /* Especificamente para o color picker */
 .classification-hub input[type="color"] {
     padding: 0;
-    /* remove padding interno padrão */
     width: 30px;
-    /* tamanho quadrado */
     height: 30px;
     border: none;
     cursor: pointer;
 }
 
-/* Para deixar mais arredondado e visual moderno */
 .classification-hub input[type="color"]::-webkit-color-swatch-wrapper {
     padding: 0;
 }
-
 .classification-hub input[type="color"]::-webkit-color-swatch {
     border-radius: 6px;
     border: 1px solid #ffffff;
@@ -211,9 +209,7 @@ button:hover {
 .classification-hub label {
     display: flex;
     align-items: center;
-    /* alinha verticalmente */
     gap: 6px;
-    /* espaço entre o texto e o input */
     font-size: 16px;
 }
 
@@ -233,12 +229,7 @@ button:hover {
     animation: spin 0.5s linear infinite;
     margin: auto;
 }
-
-@keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .all-classes p {
     font-size: 18px;
@@ -251,7 +242,7 @@ button:hover {
     margin-bottom: 30px;
     height: 350px;
     padding: 10px;
-    overflow-y: auto; /* adiciona rolagem se necessário */
+    overflow-y: auto;
 }
 
 .all-classes ul {
@@ -262,15 +253,13 @@ button:hover {
 
 .all-classes li {
     display: flex;
-    align-items: center;   /* centraliza verticalmente */
-    justify-content: flex-start; /* alinha todos à esquerda */
-    gap: 4px;              /* espaço entre quadradinho e texto */
-    padding: 4px 10px;     /* padding interno menor */
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 4px 10px;
     font-size: 16px;
     border-bottom: 1px solid #eeeeee;
 }
-
-/* Quadradinho da cor */
 .all-classes li .color-box {
     width: 20px;
     height: 20px;
@@ -278,15 +267,12 @@ button:hover {
     border: 1px solid #ececec;
     flex-shrink: 0;
 }
-
-/* Nome da classe em preto */
 .all-classes li .class-name {
     color: #000;
     flex-grow: 1;
 }
-
 .all-classes li button {
-    margin-left: 4px;      /* pequeno espaço entre texto e botão */
+    margin-left: 4px;
     background-color: #e74c3c;
     color: white;
     border: none;
@@ -295,7 +281,46 @@ button:hover {
     cursor: pointer;
     transition: background-color 0.2s;
 }
+.all-classes li button:hover { background-color: #c0392b; }
 
-.all-classes li button:hover {
-    background-color: #c0392b;
+/* ===== v7 – UI refinada ===== */
+.logo { width: 28px; height: 28px; margin-right: 8px; }
+.app-name { display:flex; align-items:center; gap:8px; }
+.pill { display:inline-block; padding:2px 8px; background:#f3f6ff; border:1px solid #dfe6ff; color:#2d6cdf; border-radius:999px; font-size:12px; }
+
+#painel-segmentacao {
+  position: relative;         /* fica ao lado do mapa dentro do layout */
+  width: 380px;               /* ↑ para não “comer” texto */
+  max-width: 95vw;
+  background: #fff;
+  padding: 14px;
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  font-size: 14px;
+  text-align: left;
+}
+#painel-segmentacao label { display:block; margin-top:8px; font-weight:600; }
+#painel-segmentacao input, #painel-segmentacao select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  outline: none;
+}
+#painel-segmentacao input:focus, #painel-segmentacao select:focus {
+  border-color: #187318; box-shadow: 0 0 0 2px rgba(24,115,24,0.10);
+}
+.panel { background:#fff; padding:12px; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.12); }
+.row { display:flex; gap:12px; align-items:center; }
+.row > * { flex:1; }
+.btn { border:0; border-radius:10px; padding:8px 12px; background:#187318; color:#fff; font-weight:600; cursor:pointer; }
+.btn:hover { filter:brightness(1.05); }
+.btn[disabled]{opacity:.6; cursor:not-allowed;}
+.spinner{ display:inline-block; width:18px; height:18px; border:3px solid #adffc3; border-top:3px solid #007406; border-radius:50%; animation:spin .6s linear infinite; }
+@keyframes spin{ to{ transform:rotate(360deg);} }
+
+@media (max-width: 1200px){
+  .content{ flex-direction:column; }
+  #map{ width:90vw; height:60vh; }
+  #painel-segmentacao{ width:90vw; }
 }

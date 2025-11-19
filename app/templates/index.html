@@ -1,85 +1,155 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
 <head>
-    <!-- Metadata -->
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GEO APP</title>
 
-    <!-- App's name -->
-    <title> GEO APP </title>
+  <!-- CSS & JS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script defer src="{{ url_for('static', filename='script_segmentation.js') }}"></script>
 
-    <!-- CSS and JAVASCRIPT includes -->
-    <link rel="stylesheet" href="../static/style.css">
-    <script src="../static/script_segmentation.js"></script>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
-    <!-- LEAFLET include -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Leaflet.Draw -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-
-
-    <!-- Search box by Esri -->
-    <script src="https://unpkg.com/esri-leaflet@2.4.1/dist/esri-leaflet.js"
-        integrity="sha512-xY2smLIHKirD03vHKDJ2u4pqeHA7OQZZ27EjtqmuhDguxiUvdsOuXMwkg16PQrm9cgTmXtoxA6kwr8KBy3cdcw=="
-        crossorigin=""></script>
-    <link rel="stylesheet" href="https://unpkg.com/esri-leaflet-geocoder@2.3.3/dist/esri-leaflet-geocoder.css"
-        integrity="sha512-IM3Hs+feyi40yZhDH6kV8vQMg4Fh20s9OzInIIAc4nx7aMYMfo+IenRUekoYsHZqGkREUgx0VvlEsgm7nCDW9g=="
-        crossorigin="">
-    <script src="https://unpkg.com/esri-leaflet-geocoder@2.3.3/dist/esri-leaflet-geocoder.js"
-        integrity="sha512-HrFUyCEtIpxZloTgEKKMq4RFYhxjJkCiF5sDxuAokklOeZ68U2NPfh4MFtyIVWlsKtVbK5GD2/JzFyAfvT5ejA=="
-        crossorigin=""></script>
-
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@200..900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap"
-        rel="stylesheet">
+  <!-- Esri search -->
+  <script src="https://unpkg.com/esri-leaflet@2.4.1/dist/esri-leaflet.js" crossorigin=""></script>
+  <link rel="stylesheet" href="https://unpkg.com/esri-leaflet-geocoder@2.3.3/dist/esri-leaflet-geocoder.css" crossorigin="">
+  <script src="https://unpkg.com/esri-leaflet-geocoder@2.3.3/dist/esri-leaflet-geocoder.js" crossorigin=""></script>
 </head>
 
 <body>
-    <header>
-        <div class="app-name">
-            <p>GEO APP</p>
-        </div>
-        <div class="rigth-corner">
-            <a class="link-text" href="youtube.com">Como usar?</a>
-            <a href="github.com"><img class="icon" src="https://cdn-icons-png.flaticon.com/512/25/25231.png"
-                    alt="Icon do Github"></a>
-        </div>
-    </header>
-
-    <div class="content">
-        <div class="map-area">
-            <h1 class="title"> Selecione um polígono com a área de interesse </h1>
-            <div id="map"></div>
-        </div>
-
-        <div class="controls">
-            <h1> Escolha a técnica </h1>
-            <form>
-                <input type="radio" id="tec1" name="method" value="tec1">
-                <label for="tec1"> SAM GEO </label><br>
-                <input type="radio" id="tec2" name="method" value="tec2">
-                <label for="tec2"> Técnica 2 </label><br>
-                <input type="radio" id="tec3" name="method" value="tec3">
-                <label for="tec3"> Técnica 3 </label><br>
-                <input type="radio" id="tec4" name="method" value="tec4">
-                <label for="tec4"> Técnica 4 </label><br>
-                <input type="radio" id="tec5" name="method" value="tec5">
-                <label for="tec5"> Técnica 5 </label><br>
-            </form>
-            <button class="segmentation-btn" id="btnSegmentar">
-                <span id="btnText">SEGMENTAR</span>
-                <span id="btnSpinner" class="spinner" style="display: none;"></span>
-            </button>
-        </div>
+  <header>
+    <div class="app-name">
+      <!-- Logo simples em SVG (pode trocar depois por uma marca final) -->
+      <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r="30" fill="none" stroke="#187318" stroke-width="3"/>
+        <path d="M32 2 A30 30 0 0 0 32 62 M2 32 A30 30 0 0 0 62 32" fill="none" stroke="#187318" stroke-width="2"/>
+        <path d="M2 24 H62 M2 40 H62" fill="none" stroke="#187318" stroke-width="1.8"/>
+      </svg>
+      <p>GEO APP</p>
+      <span class="pill">v7</span>
     </div>
-</body>
+    <div class="rigth-corner">
+      <a class="link-text" href="#">Como usar?</a>
+      <a href="https://github.com" target="_blank" rel="noreferrer">
+        <img class="icon" src="https://cdn-icons-png.flaticon.com/512/25/25231.png" alt="GitHub">
+      </a>
+    </div>
+  </header>
 
+  <div class="content">
+    <div class="map-area">
+      <h1 class="title">Selecione um polígono com a área de interesse</h1>
+      <div id="map"></div>
+    </div>
+
+    <aside id="painel-segmentacao" class="panel">
+      <h4>Selecione a técnica de segmentação</h4>
+
+      <!-- Apenas SLIC visível por enquanto -->
+      <div class="panel inner">
+        <h5 style="margin:6px 0 10px;">SLIC</h5>
+
+        <label>Máx. nuvens (%)</label>
+        <input id="maxCloud" type="number" min="0" max="100" value="20" />
+
+        <div class="row">
+          <div>
+            <label>Início</label>
+            <input id="dateStart" type="date" />
+          </div>
+          <div>
+            <label>Fim</label>
+            <input id="dateEnd" type="date" />
+          </div>
+        </div>
+
+        <label>Janela (dias)</label>
+        <input id="daysWindow" type="number" min="1" value="180" />
+
+        <hr style="margin:10px 0; border:none; border-top:1px solid #eee;">
+
+        <label>Parâmetros SLIC</label>
+        <div class="row">
+          <div>
+            <small>Region (px)</small>
+            <input id="slicRegion" type="number" min="5" value="30" />
+          </div>
+          <div>
+            <small>Compactness</small>
+            <input id="slicCompact" type="number" step="0.1" value="1.0" />
+          </div>
+          <div>
+            <small>Sigma</small>
+            <input id="slicSigma" type="number" step="0.1" value="1.0" />
+          </div>
+        </div>
+
+        <label style="margin-top:8px;">
+          <input id="useNdvi" type="checkbox" checked>
+          Usar NDVI na segmentação
+        </label>
+
+        <label style="margin-top:8px;">Preset rápido</label>
+        <select id="presetSlic">
+          <option value="balanced">Balanceado (25, 1.0, 1.2)</option>
+          <option value="fine">Fino/urbano (18, 0.6, 1.0)</option>
+          <option value="veg">Vegetação suave (36, 0.7, 1.8)</option>
+          <option value="edges">Bordas fortes (22, 2.5, 0.6)</option>
+          <option value="ag">Campos grandes (42, 0.9, 1.6)</option>
+        </select>
+
+        <details style="margin-top:8px;">
+          <summary>Tutorial dos parâmetros</summary>
+          <ul style="margin:6px 0 0 16px;">
+            <li><b>Region (px)</b>: tamanho alvo do superpixel (↓ = mais detalhes, ↑ = menos polígonos).</li>
+            <li><b>Compactness</b>: 0.4–1.2 segue mais a textura; 2–4 gera formas mais geométricas.</li>
+            <li><b>Sigma</b>: suavização prévia (↑ reduz ruído/serrilhado, bom p/ vegetação).</li>
+          </ul>
+        </details>
+
+        <div class="row" style="margin-top:12px;">
+          <button id="btnSegmentar" class="btn">
+            <span id="btnText">SEGMENTAR</span>
+            <span id="btnSpinner" class="spinner" style="display:none;"></span>
+          </button>
+        </div>
+
+        <div id="status-seg"></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Presets JS simples (mantém seu script_segmentation.js funcionando) -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const select = document.getElementById("presetSlic");
+      const r = document.getElementById("slicRegion");
+      const c = document.getElementById("slicCompact");
+      const s = document.getElementById("slicSigma");
+
+      const presets = {
+        balanced: { region: 25, compact: 1.0, sigma: 1.2 },
+        fine:     { region: 18, compact: 0.6, sigma: 1.0 },
+        veg:      { region: 36, compact: 0.7, sigma: 1.8 },
+        edges:    { region: 22, compact: 2.5, sigma: 0.6 },
+        ag:       { region: 42, compact: 0.9, sigma: 1.6 },
+      };
+
+      select.addEventListener("change", () => {
+        const p = presets[select.value];
+        if (!p) return;
+        r.value = p.region;
+        c.value = p.compact;
+        s.value = p.sigma;
+      });
+    });
+  </script>
+</body>
 </html>

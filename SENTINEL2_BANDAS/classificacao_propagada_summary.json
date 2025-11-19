@@ -1,0 +1,19 @@
+{
+  "status": "sucesso",
+  "method": "label_spreading",
+  "params": {
+    "kernel": "rbf",
+    "gamma": 20.0,
+    "n_neighbors": 7,
+    "alpha": 0.2
+  },
+  "output_geojson": "./SENTINEL2_BANDAS/classificacao_propagada.geojson",
+  "labeled_count": 4,
+  "consistency_acc_on_labeled": 1.0,
+  "class_counts": {
+    "NaN": 2535,
+    "urbana": 627,
+    "agua": 590,
+    "rasteira": 168
+  }
+}

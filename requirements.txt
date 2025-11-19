@@ -185,3 +185,5 @@ xarray==2025.4.0
 xyzservices==2025.4.0
 zipp==1.0.0
 python-dotenv==1.0.1
+pyarrow
+fastparquet

@@ -1,88 +1,95 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-
-</html>
-<html>
-
 <head>
-    <!-- Metadata -->
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GEO APP — Classificação</title>
 
-    <!-- App's name -->
-    <title> GEO APP </title>
+  <link rel="stylesheet" href="../static/style.css"/>
 
-    <!-- CSS and JAVASCRIPT includes -->
-    <link rel="stylesheet" href="../static/style.css">
-    <script src="../static/script_classification.js"></script>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- LEAFLET include -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- GeoTIFF / GeoRaster -->
+  <script src="https://unpkg.com/geotiff"></script>
+  <script src="https://unpkg.com/georaster"></script>
+  <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
 
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/geotiff"></script>
-    <script src="https://unpkg.com/georaster"></script>
-    <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
-
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@200..900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap"
-        rel="stylesheet">
+  <style>
+    #legend {
+      position: absolute; right: 16px; bottom: 16px;
+      background: #fff; padding: 10px 12px; border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12); font-size: 13px;
+      max-width: 260px;
+    }
+    #legend .item { display:flex; align-items:center; gap:8px; margin:4px 0; }
+    #legend .dot { width:14px; height:14px; border-radius:50%; border:1px solid #888; }
+    #toggle-prop { margin: 10px 0; }
+  </style>
 </head>
 
 <body>
-    <header>
-        <div class="app-name">
-            <p>GEO APP</p>
-        </div>
-        <div class="rigth-corner">
-            <a class="link-text" href="youtube.com">Como usar?</a>
-            <a href="github.com"><img class="icon" src="https://cdn-icons-png.flaticon.com/512/25/25231.png"
-                    alt="Icon do Github"></a>
-        </div>
-    </header>
+<header>
+  <div class="app-name"><p>GEO APP</p></div>
+  <div class="rigth-corner">
+    <a class="link-text" href="youtube.com">Como usar?</a>
+    <a href="github.com"><img class="icon" src="https://cdn-icons-png.flaticon.com/512/25/25231.png" alt="Github"/></a>
+  </div>
+</header>
 
-    <div class="content">
-        <div class="map-area">
-            <h1 class="title">Classifique os polígonos</h1>
-            <div id="map"></div>
-            <select id="band-options">
-                <option value="original">Original (ArcGIS)</option>
-                <option value="B01.tif">B01</option>
-                <option value="B02.tif">B02</option>
-                <option value="B03.tif">B03</option>
-                <option value="B04.tif">B04</option>
-                <option value="B05.tif">B05</option>
-                <option value="B06.tif">B06</option>
-                <option value="B07.tif">B07</option>
-                <option value="B08.tif">B08 (NIR)</option>
-                <option value="B09.tif">B09</option>
-                <option value="B11.tif">B11 (SWIR)</option>
-                <option value="B12.tif">B12</option>
-                <option value="RGB_composicao_8bit.tif">RGB</option>
-            </select>
-        </div>
+<div class="content">
+  <div class="map-area">
+    <h1 class="title">Classifique os polígonos</h1>
+    <div id="map"></div>
 
-        <div class="classification-hub">
-            <p>Crie uma nova classe e selecione os polígonos referentes</p>
-            <div class="new-class">
-                <label>Classe: <input id="className" type="text"></label>
-                <label>Cor: <input id="classColor" type="color" value="#00ff00"></label>
-                <button class="apply-class-btn" onclick="applyClass()">Aplicar</button>
-            </div>
-
-            <div class="all-classes">
-                <p>Classes Criadas</p>
-                <ul id="class-list"></ul>
-            </div>
-            <button class="save-class-btn" onclick="salvar()">Salvar classificação</button>
-        </div>
+    <div class="panel" id="toggle-prop">
+      <label><input type="checkbox" id="chkProp" /> Mostrar resultado propagado</label>
+      <div id="propStatus" style="margin-top:6px;color:#555;"></div>
     </div>
-</body>
 
+    <select id="band-options" style="margin-top:10px;">
+      <option value="original">Original (OSM)</option>
+      <option value="B01.tif">B01</option>
+      <option value="B02.tif">B02</option>
+      <option value="B03.tif">B03</option>
+      <option value="B04.tif">B04</option>
+      <option value="B05.tif">B05</option>
+      <option value="B06.tif">B06</option>
+      <option value="B07.tif">B07</option>
+      <option value="B08.tif">B08 (NIR)</option>
+      <option value="B09.tif">B09</option>
+      <option value="B11.tif">B11 (SWIR)</option>
+      <option value="B12.tif">B12</option>
+      <option value="RGB_composicao_8bit.tif">RGB</option>
+    </select>
+  </div>
+
+  <div class="classification-hub">
+    <p>Crie uma nova classe e selecione os polígonos</p>
+    <div class="new-class">
+      <label>Classe: <input id="className" type="text"></label>
+      <label>Cor: <input id="classColor" type="color" value="#00ff00"></label>
+      <button class="apply-class-btn" id="btnApplyClass">Aplicar</button>
+    </div>
+
+    <div class="all-classes">
+      <p>Classes Criadas</p>
+      <ul id="class-list"></ul>
+    </div>
+
+    <div class="row" style="gap:8px;">
+      <button class="save-class-btn" id="btnSalvar">Salvar classificação</button>
+      <button class="save-class-btn" id="btnPropagar" style="background:#3c6;">Propagar</button>
+    </div>
+  </div>
+</div>
+
+<div id="legend" style="display:none;">
+  <div><strong>Legenda</strong></div>
+  <div id="legend-items"></div>
+</div>
+
+<script src="../static/script_classification.js"></script>
+</body>
 </html>

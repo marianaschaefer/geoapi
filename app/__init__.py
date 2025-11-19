@@ -1,7 +1,12 @@
 from dotenv import load_dotenv
-load_dotenv()  # carrega .env da raiz do projeto
-
 from flask import Flask
+
+# Carrega variáveis do .env (opcional)
+load_dotenv(override=True)
+
+# Cria o app
 app = Flask(__name__)
 
-from app import routes  # importa as rotas depois de carregar o .env
+# Importa as rotas (depois de criar o app)
+from app import routes
+
