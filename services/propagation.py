@@ -1,6 +1,7 @@
 # services/propagation.py
 from __future__ import annotations
 import os
+import json
 import warnings
 from datetime import datetime
 
@@ -9,6 +10,7 @@ import pandas as pd
 import geopandas as gpd
 from sklearn.semi_supervised import LabelSpreading, LabelPropagation
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix
 
 OUTPUT_DIR = "./SENTINEL2_BANDAS"
 FEATS_PATH = os.path.join(OUTPUT_DIR, "features_by_segment.parquet")
@@ -21,6 +23,7 @@ DEFAULT_FEATURE_COLS = [
     "B02_mean","B03_mean","B04_mean","B05_mean","B06_mean","B07_mean","B08_mean","B11_mean","B12_mean",
     "NDVI_mean","NDSI_mean","EBBI_mean",
 ]
+
 
 def _latest_existing(path_prefix: str) -> str | None:
     """Retorna o arquivo mais recente que comece com path_prefix (sem extensão fixa)."""
@@ -35,19 +38,22 @@ def _latest_existing(path_prefix: str) -> str | None:
     cands.sort(key=lambda p: os.path.getmtime(p), reverse=True)
     return cands[0]
 
+
 def _encode_labels(series: pd.Series) -> tuple[np.ndarray, dict]:
     """Converte rótulos string -> inteiros {classe: id} e devolve também o mapa."""
     classes = series.fillna("unlabeled").astype(str).str.strip().str.lower()
     uniq = sorted([c for c in classes.unique() if c != "unlabeled"])
-    mapping = {c:i for i,c in enumerate(uniq)}
+    mapping = {c: i for i, c in enumerate(uniq)}
     y = np.full(len(series), -1, dtype=int)
     labeled_mask = classes != "unlabeled"
     y[labeled_mask] = classes[labeled_mask].map(mapping).to_numpy()
     return y, mapping
 
+
 def _decode_labels(ids: np.ndarray, mapping: dict) -> list[str]:
-    inv = {v:k for k,v in mapping.items()}
+    inv = {v: k for k, v in mapping.items()}
     return [inv.get(int(i), "unlabeled") for i in ids]
+
 
 def _pick_feature_cols(df: pd.DataFrame) -> list[str]:
     cols = [c for c in DEFAULT_FEATURE_COLS if c in df.columns]
@@ -56,10 +62,16 @@ def _pick_feature_cols(df: pd.DataFrame) -> list[str]:
         cols = [c for c in df.columns if c != "segment_id" and pd.api.types.is_numeric_dtype(df[c])]
     return cols
 
+
 def propagate_labels(method: str = "label_spreading", params: dict | None = None) -> dict:
     """
     Roda Label Spreading/Propagation usando features_by_segment + classificado.geojson.
     Retorna: dict com status, métricas e caminho do geojson salvo.
+
+    Saída inclui:
+      - consistency_acc_on_labeled (acurácia interna nos rótulos manuais)
+      - metrics (dict com per_class, macro/weighted, matriz de confusão)
+      - output_geojson (caminho completo)
     """
     params = params or {}
 
@@ -74,7 +86,7 @@ def propagate_labels(method: str = "label_spreading", params: dict | None = None
     # normaliza tipos
     feats["segment_id"] = pd.to_numeric(feats["segment_id"], errors="coerce").astype("Int64")
     if "class" in labs.columns and "classe" not in labs.columns:
-        labs = labs.rename(columns={"class":"classe"})
+        labs = labs.rename(columns={"class": "classe"})
     labs["segment_id"] = pd.to_numeric(labs["segment_id"], errors="coerce").astype("Int64")
 
     # junta
@@ -99,29 +111,95 @@ def propagate_labels(method: str = "label_spreading", params: dict | None = None
     # escolhe modelo
     method = (method or "label_spreading").strip().lower()
     if method == "label_propagation":
-        model = LabelPropagation(**{k:v for k,v in params.items() if v is not None})
+        model = LabelPropagation(**{k: v for k, v in params.items() if v is not None})
     else:
         method = "label_spreading"
-        model = LabelSpreading(**{k:v for k,v in params.items() if v is not None})
+        model = LabelSpreading(**{k: v for k, v in params.items() if v is not None})
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # silencia warnings numéricos internos
         model.fit(Xs, y)
 
     y_pred = model.transduction_
-    # acurácia interna somente nos rotulados válidos e com >=2 classes
+
+    # ====== MÉTRICAS EM CIMA DOS ROTULADOS ======
     labeled_mask = y >= 0
     acc = None
+    metrics = None
+
     if labeled_mask.sum() >= 2 and len(set(y[labeled_mask])) >= 2:
+        # acurácia interna simples
         acc = float((y_pred[labeled_mask] == y[labeled_mask]).mean())
+
+        # decodifica p/ rótulos string
+        y_true_dec = _decode_labels(y[labeled_mask], mapping)
+        y_pred_dec = _decode_labels(y_pred[labeled_mask], mapping)
+
+        # classification_report como dict
+        report = classification_report(
+            y_true_dec,
+            y_pred_dec,
+            output_dict=True,
+            zero_division=0
+        )
+
+        # classes presentes no relatório (ignorando métricas agregadas)
+        class_labels = [
+            k for k in report.keys()
+            if k not in ("accuracy", "macro avg", "weighted avg")
+        ]
+        class_labels = sorted(class_labels)
+
+        # matriz de confusão
+        cm = confusion_matrix(y_true_dec, y_pred_dec, labels=class_labels)
+
+        # monta dict limpo p/ JSON
+        per_class = {
+            cls: {
+                "precision": float(report[cls]["precision"]),
+                "recall": float(report[cls]["recall"]),
+                "f1": float(report[cls]["f1-score"]),
+                "support": int(report[cls]["support"]),
+            }
+            for cls in class_labels
+        }
+
+        macro_avg = report.get("macro avg", {})
+        weighted_avg = report.get("weighted avg", {})
+
+        metrics = {
+            "overall": {
+                "accuracy": acc,
+                "n_labeled": int(labeled_mask.sum()),
+                "n_total": int(len(segids)),
+            },
+            "per_class": per_class,
+            "confusion_matrix": {
+                "labels": class_labels,
+                "matrix": cm.tolist(),
+            },
+            "macro_avg": {
+                "precision": float(macro_avg.get("precision", 0.0)),
+                "recall": float(macro_avg.get("recall", 0.0)),
+                "f1": float(macro_avg.get("f1-score", 0.0)),
+            },
+            "weighted_avg": {
+                "precision": float(weighted_avg.get("precision", 0.0)),
+                "recall": float(weighted_avg.get("recall", 0.0)),
+                "f1": float(weighted_avg.get("f1-score", 0.0)),
+            },
+        }
 
     # decodifica rótulos e monta GeoDataFrame para salvar
     rotulos = _decode_labels(y_pred, mapping)
     out = pd.DataFrame({"segment_id": segids, "classe_pred": rotulos})
+
     # junta geometria dos segmentos
-    # tentar geojson de segmentos; se não achar, usa o classificado (tem geometria dos selecionados)
     seg_base = os.path.join(OUTPUT_DIR, "segments_slic_compactness05_step200")
-    seg_path = seg_base + ".geojson" if os.path.exists(seg_base + ".geojson") else seg_base + ".shp"
+    seg_geo = seg_base + ".geojson"
+    seg_shp = seg_base + ".shp"
+    seg_path = seg_geo if os.path.exists(seg_geo) else seg_shp
+
     if os.path.exists(seg_path):
         gseg = gpd.read_file(seg_path)
         gseg["segment_id"] = pd.to_numeric(gseg["segment_id"], errors="coerce").astype("Int64")
@@ -137,6 +215,19 @@ def propagate_labels(method: str = "label_spreading", params: dict | None = None
     out_path = os.path.join(OUTPUT_DIR, out_name)
     gout.to_file(out_path, driver="GeoJSON")
 
+    # salva summary de métricas em JSON separado
+    summary = {
+        "status": "sucesso",
+        "method": method,
+        "timestamp": ts,
+        "feature_cols": feature_cols,
+        "classes_": sorted(list(mapping.keys())),
+        "metrics": metrics,
+    }
+    summary_path = os.path.join(OUTPUT_DIR, "classificacao_propagada_summary.json")
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+
     return {
         "status": "sucesso",
         "method": method,
@@ -144,5 +235,9 @@ def propagate_labels(method: str = "label_spreading", params: dict | None = None
         "n_labeled": int((y >= 0).sum()),
         "consistency_acc_on_labeled": acc,  # pode ser None se não der p/ calcular
         "classes_": sorted(list(mapping.keys())),
+        "metrics": metrics,  # NOVO: métricas completas
         "output_geojson": out_path,
+        # se quiser usar depois no front, já deixo relativo à pasta de saída:
+        "output_geojson_relative": out_name,
+        "summary_path": summary_path,
     }

@@ -3,10 +3,21 @@ import os
 import glob
 import geopandas as gpd
 
+import tempfile
+import zipfile
+from pathlib import Path
+import matplotlib.pyplot as plt  # [não verificado] requer matplotlib instalado
+
 from flask import (
     jsonify, render_template, send_from_directory,
-    request, Response
+    request, Response, send_file
 )
+
+# ====== BASE DE CAMINHOS ======
+# BASE_DIR -> raiz do projeto (uma pasta acima de app/)
+BASE_DIR = Path(__file__).resolve().parents[1]
+S2_DIR = BASE_DIR / "SENTINEL2_BANDAS"   # pasta onde ficam segmentos, propagados, etc.
+
 
 # ---- serviços ----
 from services.segmentation import processar_segmentacao_completa
@@ -24,6 +35,7 @@ from services.propagation import propagate_labels
 @app.route("/")
 def home():
     return render_template("index.html")
+
 
 @app.route("/classification")
 def resultado():
@@ -57,7 +69,7 @@ def api_segmentar():
         if not bbox or len(bbox) != 4:
             return jsonify({"status": "erro", "mensagem": "BBox inválido ou ausente."}), 400
 
-        out_dir = "./SENTINEL2_BANDAS"
+        out_dir = str(S2_DIR)
 
         try:
             seg_msg = processar_segmentacao_completa(
@@ -109,10 +121,10 @@ def api_segmentar():
 # ============== RESULTADO GEOJSON (segmentos) ==============
 @app.route("/resultado_geojson")
 def resultado_geojson():
-    base = "./SENTINEL2_BANDAS/segments_slic_compactness05_step200"
-    candidatos = [base + ".geojson", base + ".shp"]
+    base = S2_DIR / "segments_slic_compactness05_step200"
+    candidatos = [base.with_suffix(".geojson"), base.with_suffix(".shp")]
     for path in candidatos:
-        if os.path.exists(path):
+        if path.exists():
             gdf = gpd.read_file(path)
             return Response(gdf.to_json(), mimetype="application/json")
     return jsonify({"erro": "Camada não encontrada"}), 404
@@ -123,10 +135,10 @@ def resultado_geojson():
 def servir_banda(nome: str):
     if ".." in nome or nome.startswith("/"):
         return "Nome inválido", 400
-    pasta_absoluta = os.path.abspath("./SENTINEL2_BANDAS")
-    alvo = os.path.join(pasta_absoluta, nome)
-    if os.path.exists(alvo):
-        return send_from_directory(pasta_absoluta, nome)
+    pasta_absoluta = S2_DIR
+    alvo = pasta_absoluta / nome
+    if alvo.exists():
+        return send_from_directory(str(pasta_absoluta), nome)
     return "Arquivo não encontrado", 404
 
 
@@ -138,10 +150,13 @@ def salvar_classificacao():
     if not feats or not isinstance(feats, list):
         return jsonify({"status": "erro", "mensagem": "Envie 'features' (GeoJSON) no corpo da requisição."}), 400
 
-    seg_base = "./SENTINEL2_BANDAS/segments_slic_compactness05_step200"
-    seg_path = seg_base + ".geojson" if os.path.exists(seg_base + ".geojson") else seg_base + ".shp"
+    seg_base = S2_DIR / "segments_slic_compactness05_step200"
+    seg_geo = seg_base.with_suffix(".geojson")
+    seg_shp = seg_base.with_suffix(".shp")
+    seg_path = seg_geo if seg_geo.exists() else seg_shp
+
     crs = None
-    if os.path.exists(seg_path):
+    if seg_path.exists():
         try:
             seg = gpd.read_file(seg_path)
             crs = seg.crs
@@ -151,10 +166,10 @@ def salvar_classificacao():
         crs = "EPSG:4326"
 
     gdf = gpd.GeoDataFrame.from_features(feats, crs=crs)
-    path_out = "./SENTINEL2_BANDAS/classificado.geojson"
-    os.makedirs(os.path.dirname(path_out), exist_ok=True)
+    path_out = S2_DIR / "classificado.geojson"
+    os.makedirs(path_out.parent, exist_ok=True)
     gdf.to_file(path_out, driver="GeoJSON")
-    return jsonify({"status": "ok", "path": path_out})
+    return jsonify({"status": "ok", "path": str(path_out)})
 
 
 # ============== AMOSTRAS (CRUD) ==============
@@ -233,22 +248,109 @@ def api_propagate():
 
 # ============== RESULTADO PROPAGADO (NOVO) ==============
 def _latest_propagado():
-    files = sorted(glob.glob("./SENTINEL2_BANDAS/propagado_*.geojson"))
+    """Retorna Path do último propagado_*.geojson ou None."""
+    files = sorted(S2_DIR.glob("propagado_*.geojson"))
     return files[-1] if files else None
+
 
 @app.route("/resultado_propagado")
 def resultado_propagado():
     """Retorna o último GeoJSON propagado (200) ou 404 se não existir."""
     path = _latest_propagado()
-    if not path or not os.path.exists(path):
+    if not path or not path.exists():
         return jsonify({"erro": "Nenhum resultado propagado encontrado"}), 404
     gdf = gpd.read_file(path)
     return Response(gdf.to_json(), mimetype="application/json")
+
 
 @app.route("/resultado_propagado/info")
 def resultado_propagado_info():
     """Retorna metadados simples do arquivo propagado mais recente."""
     path = _latest_propagado()
-    if not path or not os.path.exists(path):
+    if not path or not path.exists():
         return jsonify({"existe": False}), 200
-    return jsonify({"existe": True, "path": path}), 200
+    return jsonify({"existe": True, "path": str(path)}), 200
+
+
+# ============== DOWNLOADS DO RESULTADO PROPAGADO ==============
+@app.route("/download/propagado.geojson")
+def download_propagado_geojson():
+    """Download do último resultado propagado em GeoJSON."""
+    path = _latest_propagado()
+    if not path or not path.exists():
+        return jsonify({"status": "erro", "mensagem": "Nenhum resultado propagado encontrado."}), 404
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=path.name,
+        mimetype="application/geo+json",
+    )
+
+
+@app.route("/download/propagado.shp")
+def download_propagado_shp():
+    """Gera um Shapefile a partir do último GeoJSON propagado e entrega como ZIP."""
+    path = _latest_propagado()
+    if not path or not path.exists():
+        return jsonify({"status": "erro", "mensagem": "Nenhum resultado propagado encontrado."}), 404
+
+    # diretório temporário
+    tmpdir = Path(tempfile.mkdtemp())
+    shp_path = tmpdir / "propagado.shp"
+
+    gdf = gpd.read_file(path)
+
+    # padroniza nome da coluna de classe
+    if "classe_pred" in gdf.columns and "classe" not in gdf.columns:
+        gdf = gdf.rename(columns={"classe_pred": "classe"})
+
+    gdf.to_file(shp_path, driver="ESRI Shapefile", encoding="utf-8")
+
+    zip_path = tmpdir / "propagado_shp.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in shp_path.parent.glob("propagado.*"):
+            zf.write(f, arcname=f.name)
+
+    return send_file(
+        zip_path,
+        as_attachment=True,
+        download_name="propagado_shp.zip",
+        mimetype="application/zip",
+    )
+
+
+@app.route("/download/propagado.png")
+def download_propagado_png():
+    """Gera um PNG simples do último GeoJSON propagado."""
+    path = _latest_propagado()
+    if not path or not path.exists():
+        return jsonify({"status": "erro", "mensagem": "Nenhum resultado propagado encontrado."}), 404
+
+    gdf = gpd.read_file(path)
+
+    # escolhe coluna de classe
+    if "classe" in gdf.columns:
+        class_col = "classe"
+    elif "classe_pred" in gdf.columns:
+        class_col = "classe_pred"
+    else:
+        class_col = None
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    if class_col is not None:
+        gdf.plot(column=class_col, categorical=True, legend=True, ax=ax)
+    else:
+        gdf.plot(ax=ax)
+
+    ax.set_axis_off()
+
+    tmp_png = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    fig.savefig(tmp_png.name, bbox_inches="tight", dpi=200)
+    plt.close(fig)
+
+    return send_file(
+        tmp_png.name,
+        as_attachment=True,
+        download_name="propagado.png",
+        mimetype="image/png",
+    )

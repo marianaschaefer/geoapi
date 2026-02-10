@@ -315,4 +315,16 @@ document.addEventListener("DOMContentLoaded", async function () {
   document.getElementById("btnApplyClass")?.addEventListener("click", applyClass);
   document.getElementById("btnSalvar")?.addEventListener("click", salvar);
   document.getElementById("btnPropagar")?.addEventListener("click", propagar);
+
+  document.getElementById("btnDownloadGeoJSON")?.addEventListener("click", () => {
+    window.location.href = "/download/propagado.geojson";
+  });
+
+  document.getElementById("btnDownloadSHP")?.addEventListener("click", () => {
+    window.location.href = "/download/propagado.shp";
+  });
+
+  document.getElementById("btnDownloadPNG")?.addEventListener("click", () => {
+    window.location.href = "/download/propagado.png";
+  });
 });
