@@ -1,243 +1,48 @@
-# services/propagation.py
-from __future__ import annotations
+# services/propagation.py — v7.16.6
 import os
-import json
-import warnings
-from datetime import datetime
-
-import numpy as np
 import pandas as pd
 import geopandas as gpd
-from sklearn.semi_supervised import LabelSpreading, LabelPropagation
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.semi_supervised import LabelSpreading, SelfTrainingClassifier
+import numpy as np
 
-OUTPUT_DIR = "./SENTINEL2_BANDAS"
-FEATS_PATH = os.path.join(OUTPUT_DIR, "features_by_segment.parquet")
-LABS_PATH  = os.path.join(OUTPUT_DIR, "classificado.geojson")
+def propagate_labels(method, params, output_dir):
+    try:
+        df_all = pd.read_parquet(os.path.join(output_dir, "features.parquet"))
+        gdf_amostras = gpd.read_file(os.path.join(output_dir, "classificado.geojson"))
+        df_train = pd.merge(df_all, gdf_amostras[['segment_id', 'classe']], on='segment_id')
 
-# colunas de atributos que costumam existir no features_by_segment.parquet
-# ajuste livre conforme seu build_features
-DEFAULT_FEATURE_COLS = [
-    # Sentinel bands (exemplos comuns; o build_features pode ter nomes levemente diferentes)
-    "B02_mean","B03_mean","B04_mean","B05_mean","B06_mean","B07_mean","B08_mean","B11_mean","B12_mean",
-    "NDVI_mean","NDSI_mean","EBBI_mean",
-]
+        X_train = df_train.drop(columns=['segment_id', 'classe', 'geometry'], errors='ignore')
+        y_train = df_train['classe']
+        X_all = df_all.drop(columns=['segment_id', 'geometry'], errors='ignore')
 
+        if "Label Spreading" in method or "Label Propagation" in method:
+            clf = LabelSpreading(kernel='knn', alpha=0.2)
+            classes_unicas = y_train.unique()
+            cls_map = {cls: i for i, cls in enumerate(classes_unicas)}
+            y_semi = np.full(len(df_all), -1)
+            mapping = dict(zip(df_train['segment_id'], y_train))
+            for i, sid in enumerate(df_all['segment_id']):
+                if sid in mapping: y_semi[i] = cls_map[mapping[sid]]
+            clf.fit(X_all, y_semi)
+            inv_map = {i: cls for cls, i in cls_map.items()}
+            df_all['classe_pred'] = [inv_map[i] for i in clf.transduction_]
+        elif "Self-Training" in method:
+            base = RandomForestClassifier(n_estimators=50)
+            clf = SelfTrainingClassifier(base, threshold=0.75)
+            y_semi = np.full(len(df_all), -1, dtype=object)
+            mapping = dict(zip(df_train['segment_id'], y_train))
+            for i, sid in enumerate(df_all['segment_id']):
+                if sid in mapping: y_semi[i] = mapping[sid]
+            clf.fit(X_all, y_semi)
+            df_all['classe_pred'] = clf.predict(X_all)
 
-def _latest_existing(path_prefix: str) -> str | None:
-    """Retorna o arquivo mais recente que comece com path_prefix (sem extensão fixa)."""
-    if not os.path.isdir(OUTPUT_DIR):
-        return None
-    cands = []
-    for fn in os.listdir(OUTPUT_DIR):
-        if fn.startswith(path_prefix) and fn.lower().endswith(".geojson"):
-            cands.append(os.path.join(OUTPUT_DIR, fn))
-    if not cands:
-        return None
-    cands.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-    return cands[0]
-
-
-def _encode_labels(series: pd.Series) -> tuple[np.ndarray, dict]:
-    """Converte rótulos string -> inteiros {classe: id} e devolve também o mapa."""
-    classes = series.fillna("unlabeled").astype(str).str.strip().str.lower()
-    uniq = sorted([c for c in classes.unique() if c != "unlabeled"])
-    mapping = {c: i for i, c in enumerate(uniq)}
-    y = np.full(len(series), -1, dtype=int)
-    labeled_mask = classes != "unlabeled"
-    y[labeled_mask] = classes[labeled_mask].map(mapping).to_numpy()
-    return y, mapping
-
-
-def _decode_labels(ids: np.ndarray, mapping: dict) -> list[str]:
-    inv = {v: k for k, v in mapping.items()}
-    return [inv.get(int(i), "unlabeled") for i in ids]
-
-
-def _pick_feature_cols(df: pd.DataFrame) -> list[str]:
-    cols = [c for c in DEFAULT_FEATURE_COLS if c in df.columns]
-    # fallback: pega qualquer coluna numérica (exceto segment_id)
-    if not cols:
-        cols = [c for c in df.columns if c != "segment_id" and pd.api.types.is_numeric_dtype(df[c])]
-    return cols
-
-
-def propagate_labels(method: str = "label_spreading", params: dict | None = None) -> dict:
-    """
-    Roda Label Spreading/Propagation usando features_by_segment + classificado.geojson.
-    Retorna: dict com status, métricas e caminho do geojson salvo.
-
-    Saída inclui:
-      - consistency_acc_on_labeled (acurácia interna nos rótulos manuais)
-      - metrics (dict com per_class, macro/weighted, matriz de confusão)
-      - output_geojson (caminho completo)
-    """
-    params = params or {}
-
-    if not os.path.exists(FEATS_PATH):
-        raise FileNotFoundError(f"Features não encontradas: {FEATS_PATH}")
-    if not os.path.exists(LABS_PATH):
-        raise FileNotFoundError(f"Arquivo de rótulos não encontrado: {LABS_PATH}")
-
-    feats = pd.read_parquet(FEATS_PATH)
-    labs  = gpd.read_file(LABS_PATH)
-
-    # normaliza tipos
-    feats["segment_id"] = pd.to_numeric(feats["segment_id"], errors="coerce").astype("Int64")
-    if "class" in labs.columns and "classe" not in labs.columns:
-        labs = labs.rename(columns={"class": "classe"})
-    labs["segment_id"] = pd.to_numeric(labs["segment_id"], errors="coerce").astype("Int64")
-
-    # junta
-    df = feats.merge(labs[["segment_id", "classe"]], on="segment_id", how="left")
-    feature_cols = _pick_feature_cols(df)
-    if not feature_cols:
-        raise RuntimeError("Nenhuma coluna de feature numérica encontrada para treinar.")
-
-    X = df[feature_cols].astype(float).to_numpy()
-    y, mapping = _encode_labels(df["classe"])
-
-    # limpa linhas totalmente inválidas
-    valid_rows = np.isfinite(X).all(axis=1)
-    X = X[valid_rows]
-    y = y[valid_rows]
-    segids = df.loc[valid_rows, "segment_id"].to_numpy()
-
-    # padroniza
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X)
-
-    # escolhe modelo
-    method = (method or "label_spreading").strip().lower()
-    if method == "label_propagation":
-        model = LabelPropagation(**{k: v for k, v in params.items() if v is not None})
-    else:
-        method = "label_spreading"
-        model = LabelSpreading(**{k: v for k, v in params.items() if v is not None})
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # silencia warnings numéricos internos
-        model.fit(Xs, y)
-
-    y_pred = model.transduction_
-
-    # ====== MÉTRICAS EM CIMA DOS ROTULADOS ======
-    labeled_mask = y >= 0
-    acc = None
-    metrics = None
-
-    if labeled_mask.sum() >= 2 and len(set(y[labeled_mask])) >= 2:
-        # acurácia interna simples
-        acc = float((y_pred[labeled_mask] == y[labeled_mask]).mean())
-
-        # decodifica p/ rótulos string
-        y_true_dec = _decode_labels(y[labeled_mask], mapping)
-        y_pred_dec = _decode_labels(y_pred[labeled_mask], mapping)
-
-        # classification_report como dict
-        report = classification_report(
-            y_true_dec,
-            y_pred_dec,
-            output_dict=True,
-            zero_division=0
-        )
-
-        # classes presentes no relatório (ignorando métricas agregadas)
-        class_labels = [
-            k for k in report.keys()
-            if k not in ("accuracy", "macro avg", "weighted avg")
-        ]
-        class_labels = sorted(class_labels)
-
-        # matriz de confusão
-        cm = confusion_matrix(y_true_dec, y_pred_dec, labels=class_labels)
-
-        # monta dict limpo p/ JSON
-        per_class = {
-            cls: {
-                "precision": float(report[cls]["precision"]),
-                "recall": float(report[cls]["recall"]),
-                "f1": float(report[cls]["f1-score"]),
-                "support": int(report[cls]["support"]),
-            }
-            for cls in class_labels
-        }
-
-        macro_avg = report.get("macro avg", {})
-        weighted_avg = report.get("weighted avg", {})
-
-        metrics = {
-            "overall": {
-                "accuracy": acc,
-                "n_labeled": int(labeled_mask.sum()),
-                "n_total": int(len(segids)),
-            },
-            "per_class": per_class,
-            "confusion_matrix": {
-                "labels": class_labels,
-                "matrix": cm.tolist(),
-            },
-            "macro_avg": {
-                "precision": float(macro_avg.get("precision", 0.0)),
-                "recall": float(macro_avg.get("recall", 0.0)),
-                "f1": float(macro_avg.get("f1-score", 0.0)),
-            },
-            "weighted_avg": {
-                "precision": float(weighted_avg.get("precision", 0.0)),
-                "recall": float(weighted_avg.get("recall", 0.0)),
-                "f1": float(weighted_avg.get("f1-score", 0.0)),
-            },
-        }
-
-    # decodifica rótulos e monta GeoDataFrame para salvar
-    rotulos = _decode_labels(y_pred, mapping)
-    out = pd.DataFrame({"segment_id": segids, "classe_pred": rotulos})
-
-    # junta geometria dos segmentos
-    seg_base = os.path.join(OUTPUT_DIR, "segments_slic_compactness05_step200")
-    seg_geo = seg_base + ".geojson"
-    seg_shp = seg_base + ".shp"
-    seg_path = seg_geo if os.path.exists(seg_geo) else seg_shp
-
-    if os.path.exists(seg_path):
-        gseg = gpd.read_file(seg_path)
-        gseg["segment_id"] = pd.to_numeric(gseg["segment_id"], errors="coerce").astype("Int64")
-        gout = gseg.merge(out, on="segment_id", how="left")
-    else:
-        # fallback: joga só os rotulados (tem geometria em labs)
-        gout = labs.merge(out, on="segment_id", how="left")
-
-    # salva GeoJSON com timestamp
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_name = f"propagado_{method}_{ts}.geojson"
-    out_path = os.path.join(OUTPUT_DIR, out_name)
-    gout.to_file(out_path, driver="GeoJSON")
-
-    # salva summary de métricas em JSON separado
-    summary = {
-        "status": "sucesso",
-        "method": method,
-        "timestamp": ts,
-        "feature_cols": feature_cols,
-        "classes_": sorted(list(mapping.keys())),
-        "metrics": metrics,
-    }
-    summary_path = os.path.join(OUTPUT_DIR, "classificacao_propagada_summary.json")
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
-
-    return {
-        "status": "sucesso",
-        "method": method,
-        "n_total": int(len(segids)),
-        "n_labeled": int((y >= 0).sum()),
-        "consistency_acc_on_labeled": acc,  # pode ser None se não der p/ calcular
-        "classes_": sorted(list(mapping.keys())),
-        "metrics": metrics,  # NOVO: métricas completas
-        "output_geojson": out_path,
-        # se quiser usar depois no front, já deixo relativo à pasta de saída:
-        "output_geojson_relative": out_name,
-        "summary_path": summary_path,
-    }
+        path_seg = [f for f in os.listdir(output_dir) if f.startswith("segments")][0]
+        gdf_final = gpd.read_file(os.path.join(output_dir, path_seg))
+        gdf_final['classe_pred'] = df_all['classe_pred'].values
+        
+        output_name = "resultado_ultima_propagacao.geojson"
+        gdf_final.to_file(os.path.join(output_dir, output_name), driver="GeoJSON")
+        return {"status": "sucesso", "output_geojson": output_name}
+    except Exception as e:
+        return {"status": "erro", "mensagem": str(e)}

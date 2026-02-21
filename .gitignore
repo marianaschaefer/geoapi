@@ -1,44 +1,44 @@
-# Ambiente virtual
+# --- Ambiente Virtual ---
 .venv/
 venv/
+ENV/
 
-# Cache do Python
+# --- Cache do Python ---
 __pycache__/
-*.pyc
-*.pyo
 *.py[cod]
+*$py.class
 .pytest_cache/
+.ipynb_checkpoints/
 
+# --- Banco de Dados Local ---
+instance/
+*.db
+*.sqlite
 
-# Dados gerados pelo app
+# --- DADOS PESADOS (SENTINEL-2 & PROJETOS) ---
+# Bloqueia recursivamente tudo dentro da pasta de projetos
+SENTINEL2_BANDAS/projects/
+# Bloqueia qualquer arquivo de dados solto na pasta raiz de bandas
 SENTINEL2_BANDAS/*.tif
 SENTINEL2_BANDAS/*.tiff
 SENTINEL2_BANDAS/*.parquet
+SENTINEL2_BANDAS/*.geojson
 SENTINEL2_BANDAS/*.gpkg
 SENTINEL2_BANDAS/*.csv
 SENTINEL2_BANDAS/*.shp
-SENTINEL2_BANDAS/*.shx
 SENTINEL2_BANDAS/*.dbf
-SENTINEL2_BANDAS/*.prj
-SENTINEL2_BANDAS/propagado_*.geojson
-SENTINEL2_BANDAS/pred*.geojson
-SENTINEL2_BANDAS/classificado.geojson
-SENTINEL2_BANDAS/features_by_segment.parquet
-SENTINEL2_BANDAS/features.parquet
 
-# Logs
-*.log
-
-# Backups acidentais
-*.backup.*.py
-
-# Arquivos locais
+# --- Configurações Locais e Sensíveis ---
 .env
+.flaskenv
+.vscode/
+.idea/
 
-# Backups manuais
-services/*.backup.*
+# --- Backups e Logs ---
+*.log
+*.backup.*
 oldREADME.md
+services/*.backup.*
 
-# Docker
+# --- Docker ---
 .dockerignore
-

@@ -2,101 +2,103 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>GEO APP — Classificação</title>
-
-  <link rel="stylesheet" href="../static/style.css"/>
-
-  <!-- Leaflet -->
+  <title>GEO API — Classificação</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-  <!-- GeoTIFF / GeoRaster -->
   <script src="https://unpkg.com/geotiff"></script>
   <script src="https://unpkg.com/georaster"></script>
   <script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
 
   <style>
-    #legend {
-      position: absolute; right: 16px; bottom: 16px;
-      background: #fff; padding: 10px 12px; border-radius: 10px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.12); font-size: 13px;
-      max-width: 260px;
-    }
-    #legend .item { display:flex; align-items:center; gap:8px; margin:4px 0; }
-    #legend .dot { width:14px; height:14px; border-radius:50%; border:1px solid #888; }
-    #toggle-prop { margin: 10px 0; }
-  </style>
-</head>
+    .content { display: flex; height: calc(100vh - 65px); }
+    .map-area { flex: 3; position: relative; padding: 15px; display: flex; flex-direction: column; }
+    #map { flex-grow: 1; width: 100%; border-radius: 8px; border: 1px solid #ddd; }
+    .classification-hub { flex: 1; min-width: 320px; padding: 20px; overflow-y: auto; background: #fff; border-left: 1px solid #ddd; }
+    .method-box { background: #f9f9f9; padding: 12px; border-radius: 6px; border: 1px solid #ddd; margin: 15px 0; }
+    
+    /* Estilo para lista de classes */
+    #class-list { list-style: none; padding: 0; margin-top: 10px; }
+    #class-list li { padding: 5px; border-bottom: 1px solid #eee; font-size: 0.9em; }
 
+    /* Estilo para botões de download */
+    .btn-download {
+        display: block;
+        text-align: center;
+        padding: 8px;
+        background: #f8f9fa;
+        color: #333;
+        text-decoration: none;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 0.85em;
+        margin-bottom: 8px;
+        transition: background 0.2s;
+    }
+    .btn-download:hover { background: #e9ecef; border-color: #bbb; }
+    
+    .save-class-btn { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+  </style>
+  <script>window.__PROJECT_ID__ = {{ project_id|int }};</script>
+</head>
 <body>
-<header>
-  <div class="app-name"><p>GEO APP</p></div>
-  <div class="rigth-corner">
-    <a class="link-text" href="youtube.com">Como usar?</a>
-    <a href="github.com"><img class="icon" src="https://cdn-icons-png.flaticon.com/512/25/25231.png" alt="Github"/></a>
+<header style="display: flex; justify-content: space-between; padding: 10px 20px; background: #f4f4f4;">
+  <div style="display: flex; gap: 15px;">
+    <a href="{{ url_for('home') }}" style="text-decoration: none;">🏠 Home</a>
+    <strong>Projeto: {{ projeto.name }}</strong>
   </div>
 </header>
 
 <div class="content">
   <div class="map-area">
-    <h1 class="title">Classifique os polígonos</h1>
     <div id="map"></div>
-
-    <div class="panel" id="toggle-prop">
-      <label><input type="checkbox" id="chkProp" /> Mostrar resultado propagado</label>
-      <div id="propStatus" style="margin-top:6px;color:#555;"></div>
+    <div style="margin-top:10px; display: flex; gap: 15px; align-items: center;">
+      <label><input type="checkbox" id="chkProp"> Mostrar resultado propagado</label>
+      <select id="band-options" style="flex: 1; padding: 5px;">
+          <option value="original">Original (Mapa Base)</option>
+          <option value="RGB_composicao_8bit.tif">Cor Verdadeira (RGB)</option>
+          <option value="Falsa_Cor_Veg.tif">Mata (NIR-R-G)</option>
+          <option value="Agricultura_Solo.tif">Solo/Urbano (SWIR-NIR-B)</option>
+          <option value="B08.tif">Infravermelho (NIR)</option>
+      </select>
     </div>
-
-    <select id="band-options" style="margin-top:10px;">
-      <option value="original">Original (OSM)</option>
-      <option value="B01.tif">B01</option>
-      <option value="B02.tif">B02</option>
-      <option value="B03.tif">B03</option>
-      <option value="B04.tif">B04</option>
-      <option value="B05.tif">B05</option>
-      <option value="B06.tif">B06</option>
-      <option value="B07.tif">B07</option>
-      <option value="B08.tif">B08 (NIR)</option>
-      <option value="B09.tif">B09</option>
-      <option value="B11.tif">B11 (SWIR)</option>
-      <option value="B12.tif">B12</option>
-      <option value="RGB_composicao_8bit.tif">RGB</option>
-    </select>
   </div>
 
   <div class="classification-hub">
-    <p>Crie uma nova classe e selecione os polígonos</p>
+    <h4>Amostragem (Active Learning)</h4>
     <div class="new-class">
-      <label>Classe: <input id="className" type="text"></label>
-      <label>Cor: <input id="classColor" type="color" value="#00ff00"></label>
-      <button class="apply-class-btn" id="btnApplyClass">Aplicar</button>
+      <input id="className" type="text" placeholder="Ex: Mata" style="width:60%;">
+      <input id="classColor" type="color" value="#00ff00">
+      <button id="btnApplyClass">Aplicar</button>
     </div>
-
-    <div class="all-classes">
-      <p>Classes Criadas</p>
+    
+    <div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
+      <p style="font-weight: bold; font-size: 0.85em; margin-bottom: 5px;">Classes Criadas:</p>
       <ul id="class-list"></ul>
     </div>
 
-    <div class="row" style="gap:8px;">
-      <button class="save-class-btn" id="btnSalvar">Salvar classificação</button>
-      <button class="save-class-btn" id="btnPropagar" style="background:#3c6;">Propagar</button>
+    <div class="method-box">
+      <label><strong>Algoritmo de ML:</strong></label>
+      <select id="mlMethod" style="width: 100%; margin-top: 5px; padding: 5px;">
+        <option value="Label Spreading">Label Spreading</option>
+        <option value="Label Propagation">Label Propagation</option>
+        <option value="Self-Training (Random Forest)">Self-Training (Random Forest)</option>
+      </select>
     </div>
 
-    <!-- NOVA LINHA: botões de download -->
-    <div class="row" style="gap:8px; margin-top:10px;">
-      <button class="save-class-btn" id="btnDownloadGeoJSON">Baixar GeoJSON</button>
-      <button class="save-class-btn" id="btnDownloadSHP">Baixar Shapefile</button>
-      <button class="save-class-btn" id="btnDownloadPNG">Baixar PNG</button>
+    <button id="btnSalvar" class="save-class-btn" style="width:100%; margin-bottom:10px; background:#007bff; color: white;">Salvar Amostras</button>
+    <button id="btnPropagar" class="save-class-btn" style="width:100%; background: #28a745; color: white;">Propagar Rótulos</button>
+
+    <div style="margin-top: 25px; border-top: 2px solid #ddd; padding-top: 15px;">
+      <h5 style="margin-bottom: 10px;">Exportar Dados do Artigo</h5>
+      <div style="display: flex; flex-direction: column;">
+        <a href="/download/{{ project_id }}/classificado.geojson" class="btn-download">Amostras (GeoJSON)</a>
+        <a href="/download/{{ project_id }}/resultado_ultima_propagacao.geojson" class="btn-download" style="background:#eef;">Classificação Final (GeoJSON)</a>
+        <a href="/download/{{ project_id }}/features.parquet" class="btn-download" style="font-size: 0.8em;">Atributos Estatísticos (Parquet)</a>
+      </div>
     </div>
   </div>
 </div>
-
-<div id="legend" style="display:none;">
-  <div><strong>Legenda</strong></div>
-  <div id="legend-items"></div>
-</div>
-
-<script src="../static/script_classification.js"></script>
+<script defer src="{{ url_for('static', filename='script_classification.js') }}"></script>
 </body>
 </html>

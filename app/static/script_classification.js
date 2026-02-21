@@ -1,330 +1,196 @@
-// static/script_classification.js — v7.7 (pinta propagação + tooltip)
+// static/script_classification.js — v7.23.2 - FIX: Troca de Bandas (Forced Refresh) + Persistência
 document.addEventListener("DOMContentLoaded", async function () {
-  // ====== Estado ======
+  const projectId = window.__PROJECT_ID__;
+  if (!projectId) return;
+
   const params = new URLSearchParams(window.location.search);
   const bboxStr = params.get("bbox");
   const bbox = bboxStr ? bboxStr.split(",").map(parseFloat) : null;
-  const bounds = bbox ? [[bbox[1], bbox[0]], [bbox[3], bbox[2]]] : null;
+  
+  // Inicializa o mapa. Se houver BBOX na URL (vindo da segmentação), foca nele.
+  const map = L.map("map").setView([-15.78, -47.93], 5);
+  if (bbox) {
+      map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
+  }
+  
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-  const map = L.map("map").setView([-15.78, -47.93], 6);
-  if (bounds) map.fitBounds(bounds);
-
-  // Base
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution:"&copy; OSM" }).addTo(map);
-
-  let backdropLayer = null;      // raster escolhido
-  let segmentsLayer = null;      // camada de segmentos
-  const classBySegment = new Map();  // segment_id -> { name, color } (manuais)
+  let sentinelLayer = null;
+  let segmentsLayer = null; 
+  const classBySegment = new Map();
+  const classesCriadas = {}; // Guarda { "nome": "#cor" }
   const selectedIds = new Set();
-  const classesCriadas = {};     // catálogo de classes (nome -> cor)
-
-  // Propagação (resultado)
+  let propagatedById = new Map();
   let showPropagated = false;
-  const propagatedById = new Map();   // segment_id -> classe (string)
-  const propagatedColors = new Map(); // classe -> cor (se vier nova classe não cadastrada)
 
-  // ====== util: cor por classe ======
   function colorForClass(nome) {
-    if (!nome) return "#ffcc00"; // default amarelo
-    if (classesCriadas[nome]) return classesCriadas[nome];
-    if (propagatedColors.has(nome)) return propagatedColors.get(nome);
-    // cor determinística caso a classe não exista no catálogo
-    const h = Math.abs([...nome].reduce((a,c)=>a*31 + c.charCodeAt(0), 7)) % 360;
-    const c = `hsl(${h}, 65%, 45%)`;
-    propagatedColors.set(nome, c);
-    return c;
+    const n = String(nome).trim().toLowerCase();
+    return classesCriadas[n] || `hsl(${Math.abs([...n].reduce((a, c) => a * 31 + c.charCodeAt(0), 7)) % 360}, 65%, 45%)`;
   }
 
-  // ====== bandas (raster) ======
-  async function carregarBanda(filename) {
-    try {
-      if (backdropLayer) { map.removeLayer(backdropLayer); backdropLayer = null; }
-      if (!filename || filename === "original") return;
-
-      const resp = await fetch("/bandas/" + filename);
-      if (!resp.ok) throw new Error("Falha ao carregar banda: " + filename);
-      const ab = await resp.arrayBuffer();
-      const georaster = await parseGeoraster(ab);
-
-      backdropLayer = new GeoRasterLayer({
-        georaster, opacity: filename.includes("RGB") ? 0.9 : 0.85, resolution: 256
-      }).addTo(map);
-      map.fitBounds(backdropLayer.getBounds());
-    } catch (e) {
-      console.error(e);
-      alert("Não foi possível renderizar a banda selecionada.");
-    }
-  }
-
-  const bandSelect = document.getElementById("band-options");
-  if (bandSelect) {
-    await carregarBanda(bandSelect.value);
-    bandSelect.addEventListener("change", (e)=>carregarBanda(e.target.value));
-  }
-
-  // ====== estilo dos segmentos ======
-  function styleFeature(feature) {
-    const sid = feature?.properties?.segment_id;
-    // 1) manual tem prioridade quando selecionado para aplicar classe
-    const manual = classBySegment.get(sid);
-    // 2) se toggle ligado, usa classe propagada como fallback
-    const propagated = showPropagated ? propagatedById.get(sid) : null;
-
-    // regra de cor
-    const classe = manual?.name || propagated || null;
-    const baseColor = classe ? colorForClass(String(classe).trim().toLowerCase()) : "#ffcc00";
-    const isSelected = selectedIds.has(sid);
-
-    return {
-      color: isSelected ? "#000000" : baseColor,
-      weight: isSelected ? 2.4 : 1.0,
-      fillColor: baseColor,
-      fillOpacity: classe ? 0.45 : 0.22
-    };
-  }
-
-  function onEachFeature(feature, layer) {
-    const sid = feature?.properties?.segment_id;
-    layer.on("click", () => {
-      if (!sid) return;
-      if (selectedIds.has(sid)) selectedIds.delete(sid); else selectedIds.add(sid);
-      layer.setStyle(styleFeature(feature));
-      // tooltip dinâmica com origem/manual/propagada
-      const manual = classBySegment.get(sid);
-      const prop   = propagatedById.get(sid);
-      const classe = manual?.name || prop || "(sem classe)";
-      const origem = manual ? "manual" : (prop ? "propagada" : "—");
-      layer.bindPopup(
-        `<b>segment_id:</b> ${sid}<br><b>classe:</b> ${classe}<br><i>origem:</i> ${origem}`
-      ).openPopup();
-    });
-  }
-
-  // ====== carregar segmentos (base) ======
-  async function loadSegments() {
-    try {
-      const r = await fetch("/resultado_geojson");
-      if (!r.ok) { alert("Execute a segmentação antes."); return; }
-      const gj = await r.json();
-      if (segmentsLayer) map.removeLayer(segmentsLayer);
-      segmentsLayer = L.geoJSON(gj, { style: styleFeature, onEachFeature }).addTo(map);
-      if (!bounds) map.fitBounds(segmentsLayer.getBounds());
-    } catch (e) {
-      console.error("Erro ao carregar GeoJSON:", e);
-    }
-  }
-  await loadSegments();
-
-  // ====== UI: classes (lado direito) ======
   function atualizarListaClasses() {
     const ul = document.getElementById("class-list");
+    if (!ul) return;
     ul.innerHTML = "";
     Object.entries(classesCriadas).forEach(([nome, cor]) => {
       const li = document.createElement("li");
-
-      const colorBox = document.createElement("span");
-      colorBox.className = "color-box"; colorBox.style.backgroundColor = cor;
-      li.appendChild(colorBox);
-
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "class-name"; nameSpan.textContent = nome;
-      li.appendChild(nameSpan);
-
-      const delBtn = document.createElement("button");
-      delBtn.textContent = "X";
-      delBtn.onclick = () => {
-        delete classesCriadas[nome];
-        // remove classe aplicada manualmente aos segmentos com esse nome
-        segmentsLayer.eachLayer(layer => {
-          const sid = layer.feature?.properties?.segment_id;
-          const manual = classBySegment.get(sid);
-          if (manual?.name === nome) {
-            classBySegment.delete(sid);
-            layer.setStyle(styleFeature(layer.feature));
-          }
-        });
-        ul.removeChild(li);
-      };
-      li.appendChild(delBtn);
-
+      li.style.display = "flex"; li.style.alignItems = "center"; li.style.gap = "8px";
+      li.innerHTML = `<span style="width:12px; height:12px; background:${cor}; border:1px solid #000; border-radius:2px;"></span> <span>${nome}</span>`;
       ul.appendChild(li);
     });
   }
 
-  function applyClass() {
-    const name = document.getElementById("className").value.trim();
-    const color = document.getElementById("classColor").value;
-    if (!name) { alert("Digite o nome da classe!"); return; }
+  // --- CONTROLE DE CAMADAS RASTER (AJUSTE FINO v7.23.2) ---
+  document.getElementById("band-options")?.addEventListener("change", async (e) => {
+    const val = e.target.value;
+    
+    // 1. LIMPEZA TOTAL DA CAMADA ANTERIOR NO MAPA E NA MEMÓRIA
+    if (sentinelLayer) {
+        map.removeLayer(sentinelLayer);
+        sentinelLayer = null; 
+    }
 
-    const finalColor = classesCriadas[name] || color;
-    if (!classesCriadas[name]) {
-      classesCriadas[name] = finalColor;
+    if (val === "original") {
+        console.log("[RASTER] Exibindo apenas mapa base.");
+        return;
+    }
+
+    console.log("[RASTER] Solicitando nova composição:", val);
+    // O timestamp (?t=) evita que o navegador ignore a mudança de arquivo
+    const url = `/bandas/${projectId}/${val}?t=${new Date().getTime()}`;
+    
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP Erro: ${response.status}`);
+      
+      const arrayBuffer = await response.arrayBuffer();
+      const georaster = await parseGeoraster(arrayBuffer);
+      
+      // Criamos uma nova instância forçando a limpeza do buffer
+      sentinelLayer = new GeoRasterLayer({
+        georaster: georaster,
+        opacity: 0.8,
+        resolution: 256,
+        keepBuffer: false, // Vital para não reutilizar dados da imagem anterior
+        debugLevel: 0
+      });
+      
+      sentinelLayer.addTo(map);
+      
+      // 2. Garante que os polígonos da segmentação fiquem sempre na frente da imagem
+      if (segmentsLayer) {
+          segmentsLayer.bringToFront();
+      }
+      
+    } catch (err) {
+      console.error("[RASTER] Erro ao carregar composição:", err);
+    }
+  });
+
+  function styleFeature(feature) {
+    const sid = feature.properties.segment_id;
+    const manual = classBySegment.get(sid);
+    const prop = showPropagated ? propagatedById.get(sid) : null;
+    const classe = manual?.name || prop;
+    return {
+      fillColor: manual ? manual.color : (prop ? colorForClass(prop) : "#ffcc00"),
+      fillOpacity: selectedIds.has(sid) ? 0.75 : (classe ? 0.6 : 0.15),
+      color: "#333", weight: 0.8
+    };
+  }
+
+  async function loadData() {
+    const r = await fetch(`/resultado_geojson?project_id=${projectId}`);
+    const gj = await r.json();
+    
+    // Tenta carregar amostras salvas (PERSISTÊNCIA DE CORES)
+    const rA = await fetch(`/resultado_propagado?project_id=${projectId}&path=classificado.geojson`);
+    if (rA.ok) {
+      const gjA = await rA.json();
+      gjA.features.forEach(f => {
+        const sid = f.properties.segment_id;
+        const cl = f.properties.classe;
+        const cor_salva = f.properties.cor; 
+        if (sid != null && cl) {
+          classesCriadas[cl] = cor_salva || colorForClass(cl);
+          classBySegment.set(sid, { name: cl, color: classesCriadas[cl] });
+        }
+      });
       atualizarListaClasses();
     }
-    if (selectedIds.size === 0) { alert("Selecione ao menos um polígono no mapa."); return; }
 
-    selectedIds.forEach(id => classBySegment.set(id, { name, color: finalColor }));
-    segmentsLayer.eachLayer(layer => {
-      const sid = layer.feature?.properties?.segment_id;
-      if (sid && classBySegment.has(sid)) layer.setStyle(styleFeature(layer.feature));
-    });
-    selectedIds.clear();
-  }
-
-  async function salvar() {
-    const feats = [];
-    segmentsLayer.eachLayer(layer => {
-      const f = layer.feature;
-      const sid = f?.properties?.segment_id;
-      const manual = classBySegment.get(sid);
-      if (sid && manual) {
-        feats.push({
-          type: "Feature",
-          properties: { ...f.properties, classe: manual.name, color: manual.color },
-          geometry: f.geometry
+    if (segmentsLayer) map.removeLayer(segmentsLayer);
+    segmentsLayer = L.geoJSON(gj, {
+      style: styleFeature,
+      onEachFeature: (f, l) => {
+        l.on("click", () => {
+          const sid = f.properties.segment_id;
+          if (selectedIds.has(sid)) selectedIds.delete(sid);
+          else selectedIds.add(sid);
+          segmentsLayer.eachLayer(ly => ly.setStyle(styleFeature(ly.feature)));
         });
       }
-    });
-    if (feats.length === 0) { alert("Nenhum segmento classificado para salvar."); return; }
-    try {
-      const r = await fetch("/salvar_classificacao", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ features: feats })
-      });
-      const j = await r.json();
-      if (j.status === "ok") alert("Classificação salva!"); 
-      else alert("Falha ao salvar: " + (j.mensagem || "desconhecida"));
-    } catch (e) {
-      console.error(e); 
-      alert("Erro ao salvar.");
-    }
+    }).addTo(map);
   }
 
-  // ====== Propagação ======
-  async function carregarPropagado(pathOrNull = null) {
-    // baixa o último (ou um específico) e indexa por segment_id
-    const url = pathOrNull
-      ? `/resultado_propagado?path=${encodeURIComponent(pathOrNull)}`
-      : "/resultado_propagado";
+  document.getElementById("btnApplyClass")?.addEventListener("click", () => {
+    const name = document.getElementById("className").value.trim().toLowerCase();
+    const color = document.getElementById("classColor").value;
+    if (!name || selectedIds.size === 0) return;
+    classesCriadas[name] = color;
+    selectedIds.forEach(id => classBySegment.set(id, { name, color }));
+    atualizarListaClasses();
+    segmentsLayer.eachLayer(l => l.setStyle(styleFeature(l.feature)));
+    selectedIds.clear();
+  });
 
-    console.log("[PROP] carregando propagado de:", url);
-
-    const r = await fetch(url);
-    if (!r.ok) {
-      console.warn("[PROP] Nenhum propagado encontrado. HTTP", r.status);
-      propagatedById.clear();
-      return;
-    }
-
-    const gj = await r.json();
-    console.log(
-      "[PROP] GeoJSON propagado: features=",
-      gj.features?.length,
-      "exemplo properties=",
-      gj.features && gj.features[0] ? gj.features[0].properties : null
-    );
-
-    propagatedById.clear();
-    (gj.features || []).forEach(f => {
-      const props = f.properties || {};
-      const sid = props.segment_id;
-
-      // aceita vários nomes possíveis; no seu caso, `classe_pred`
-      const rawClass =
-        props.classe_pred ??
-        props.classe ??
-        props.label ??
-        props.class_name ??
-        "";
-
-      const cl = rawClass.toString().trim().toLowerCase();
-
-      if (sid != null && cl) {
-        propagatedById.set(sid, cl);
-      }
-    });
-
-    console.log("[PROP] total IDs indexados em propagatedById:", propagatedById.size);
-  }
-
-  async function propagar() {
-    try {
-      // tenta ler o método da UI; se não existir, usa padrão
-      const methodEl = document.getElementById("propMethod");
-      const method = (methodEl && methodEl.value) ? methodEl.value : "label_spreading";
-
-      const statusEl = document.getElementById("propStatus");
-      if (statusEl) {
-        statusEl.textContent = "Executando propagação…";
-      }
-
-      const resp = await fetch("/api/propagate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method })
-      });
-      const json = await resp.json();
-      if (resp.ok && json.status === "sucesso") {
-        if (statusEl) {
-          statusEl.textContent =
-            `OK (${method}) — acurácia interna: ${Number(json.consistency_acc_on_labeled).toFixed(3)}`;
+  document.getElementById("btnSalvar")?.addEventListener("click", async () => {
+    const feats = [];
+    segmentsLayer.eachLayer(l => {
+        const sid = l.feature.properties.segment_id;
+        if (classBySegment.has(sid)) {
+            const info = classBySegment.get(sid);
+            feats.push({ 
+                type: "Feature", 
+                properties: { segment_id: sid, classe: info.name, cor: info.color }, 
+                geometry: l.feature.geometry 
+            });
         }
-
-        // carrega o arquivo recém-criado e liga o toggle
-        await carregarPropagado(json.output_geojson_relative || null);
-        showPropagated = true;
-        const chk = document.getElementById("chkProp");
-        if (chk) chk.checked = true;
-
-        // restiliza
-        segmentsLayer.eachLayer(l => l.setStyle(styleFeature(l.feature)));
-        alert(
-          "Propagação concluída. Resultado salvo em:\n" +
-          (json.output_geojson || json.output_geojson_relative)
-        );
-      } else {
-        throw new Error(json.mensagem || "Erro ao rodar a propagação.");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Erro ao rodar a propagação.");
-    }
-  }
-
-  // ====== Toggle “Mostrar resultado propagado” ======
-  const chkProp = document.getElementById("chkProp");
-  if (chkProp) {
-    chkProp.addEventListener("change", async (e) => {
-      showPropagated = e.target.checked;
-      if (showPropagated && propagatedById.size === 0) {
-        await carregarPropagado(); // tenta último disponível
-      }
-      segmentsLayer.eachLayer(l => l.setStyle(styleFeature(l.feature)));
     });
-
-    // Se o checkbox já vier marcado por template, tenta carregar o último
-    if (chkProp.checked) {
-      await carregarPropagado();
-      showPropagated = true;
-      segmentsLayer.eachLayer(l => l.setStyle(styleFeature(l.feature)));
-    }
-  }
-
-  // ====== Wire-up ======
-  document.getElementById("btnApplyClass")?.addEventListener("click", applyClass);
-  document.getElementById("btnSalvar")?.addEventListener("click", salvar);
-  document.getElementById("btnPropagar")?.addEventListener("click", propagar);
-
-  document.getElementById("btnDownloadGeoJSON")?.addEventListener("click", () => {
-    window.location.href = "/download/propagado.geojson";
+    const resp = await fetch("/salvar_classificacao", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project_id: projectId, features: feats })
+    });
+    if (resp.ok) alert("Amostras salvas com sucesso!");
   });
 
-  document.getElementById("btnDownloadSHP")?.addEventListener("click", () => {
-    window.location.href = "/download/propagado.shp";
+  document.getElementById("btnPropagar")?.addEventListener("click", async () => {
+    const method = document.getElementById("mlMethod").value;
+    const btn = document.getElementById("btnPropagar");
+    btn.disabled = true; btn.textContent = "Processando...";
+    try {
+        const resp = await fetch("/api/propagate", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_id: projectId, method: method })
+        });
+        const json = await resp.json();
+        if (json.status === "sucesso") {
+          const rP = await fetch(`/resultado_propagado?project_id=${projectId}&path=${json.output_geojson}`);
+          const gjP = await rP.json();
+          propagatedById = new Map(gjP.features.map(f => [f.properties.segment_id, f.properties.classe_pred]));
+          showPropagated = true;
+          document.getElementById("chkProp").checked = true;
+          segmentsLayer.eachLayer(l => l.setStyle(styleFeature(l.feature)));
+          alert("Propagação concluída!");
+        } else { alert("Erro: " + json.mensagem); }
+    } catch (e) { console.error(e); }
+    btn.disabled = false; btn.textContent = "Propagar Rótulos";
   });
 
-  document.getElementById("btnDownloadPNG")?.addEventListener("click", () => {
-    window.location.href = "/download/propagado.png";
+  document.getElementById("chkProp")?.addEventListener("change", (e) => {
+    showPropagated = e.target.checked;
+    segmentsLayer.eachLayer(l => l.setStyle(styleFeature(l.feature)));
   });
+
+  await loadData();
 });
