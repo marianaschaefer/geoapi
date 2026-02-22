@@ -1,6 +1,6 @@
----GeoApi v2.0 — Segmentação & Active Learning---
+---GeoApi v2.0 — Segmentação e Aprendizado Semi-Supervisionado Interativo---
 
-Aplicação Web SIG (Sistema de Informações Geográficas) integrada ao Sentinel-2, projetada para segmentação de imagens e classificação semi-supervisionada e Active Learning.
+Aplicação Web SIG (Sistema de Informações Geográficas) integrada ao Sentinel-2, projetada para segmentação de imagens e classificação semi-supervisionada em ciclo iterativo human-in-the-loop.
 
 
 Integração Sentinel-2: Download automático de bandas via STAC API (Earth Search).

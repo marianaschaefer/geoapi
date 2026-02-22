@@ -1,4 +1,4 @@
-// static/script_classification.js — v7.23.2 - FIX: Troca de Bandas (Forced Refresh) + Persistência
+// static/script_classification.js — v7.25.1 - FIX: Definições de Estilo + Estabilidade de Zoom
 document.addEventListener("DOMContentLoaded", async function () {
   const projectId = window.__PROJECT_ID__;
   if (!projectId) return;
@@ -7,21 +7,21 @@ document.addEventListener("DOMContentLoaded", async function () {
   const bboxStr = params.get("bbox");
   const bbox = bboxStr ? bboxStr.split(",").map(parseFloat) : null;
   
-  // Inicializa o mapa. Se houver BBOX na URL (vindo da segmentação), foca nele.
   const map = L.map("map").setView([-15.78, -47.93], 5);
-  if (bbox) {
-      map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
-  }
+  if (bbox) map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
   
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-  let sentinelLayer = null;
+  const sentinelLayerGroup = L.layerGroup().addTo(map);
+
   let segmentsLayer = null; 
   const classBySegment = new Map();
-  const classesCriadas = {}; // Guarda { "nome": "#cor" }
+  const classesCriadas = {}; 
   const selectedIds = new Set();
   let propagatedById = new Map();
   let showPropagated = false;
+
+  // --- FUNÇÕES AUXILIARES DE ESTILO E UI ---
 
   function colorForClass(nome) {
     const n = String(nome).trim().toLowerCase();
@@ -40,53 +40,6 @@ document.addEventListener("DOMContentLoaded", async function () {
     });
   }
 
-  // --- CONTROLE DE CAMADAS RASTER (AJUSTE FINO v7.23.2) ---
-  document.getElementById("band-options")?.addEventListener("change", async (e) => {
-    const val = e.target.value;
-    
-    // 1. LIMPEZA TOTAL DA CAMADA ANTERIOR NO MAPA E NA MEMÓRIA
-    if (sentinelLayer) {
-        map.removeLayer(sentinelLayer);
-        sentinelLayer = null; 
-    }
-
-    if (val === "original") {
-        console.log("[RASTER] Exibindo apenas mapa base.");
-        return;
-    }
-
-    console.log("[RASTER] Solicitando nova composição:", val);
-    // O timestamp (?t=) evita que o navegador ignore a mudança de arquivo
-    const url = `/bandas/${projectId}/${val}?t=${new Date().getTime()}`;
-    
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP Erro: ${response.status}`);
-      
-      const arrayBuffer = await response.arrayBuffer();
-      const georaster = await parseGeoraster(arrayBuffer);
-      
-      // Criamos uma nova instância forçando a limpeza do buffer
-      sentinelLayer = new GeoRasterLayer({
-        georaster: georaster,
-        opacity: 0.8,
-        resolution: 256,
-        keepBuffer: false, // Vital para não reutilizar dados da imagem anterior
-        debugLevel: 0
-      });
-      
-      sentinelLayer.addTo(map);
-      
-      // 2. Garante que os polígonos da segmentação fiquem sempre na frente da imagem
-      if (segmentsLayer) {
-          segmentsLayer.bringToFront();
-      }
-      
-    } catch (err) {
-      console.error("[RASTER] Erro ao carregar composição:", err);
-    }
-  });
-
   function styleFeature(feature) {
     const sid = feature.properties.segment_id;
     const manual = classBySegment.get(sid);
@@ -99,40 +52,69 @@ document.addEventListener("DOMContentLoaded", async function () {
     };
   }
 
-  async function loadData() {
-    const r = await fetch(`/resultado_geojson?project_id=${projectId}`);
-    const gj = await r.json();
-    
-    // Tenta carregar amostras salvas (PERSISTÊNCIA DE CORES)
-    const rA = await fetch(`/resultado_propagado?project_id=${projectId}&path=classificado.geojson`);
-    if (rA.ok) {
-      const gjA = await rA.json();
-      gjA.features.forEach(f => {
-        const sid = f.properties.segment_id;
-        const cl = f.properties.classe;
-        const cor_salva = f.properties.cor; 
-        if (sid != null && cl) {
-          classesCriadas[cl] = cor_salva || colorForClass(cl);
-          classBySegment.set(sid, { name: cl, color: classesCriadas[cl] });
-        }
-      });
-      atualizarListaClasses();
-    }
+  // --- CONTROLE DE CAMADAS RASTER ---
+  document.getElementById("band-options")?.addEventListener("change", async (e) => {
+    const val = e.target.value;
+    sentinelLayerGroup.clearLayers();
+    if (val === "original") return;
 
-    if (segmentsLayer) map.removeLayer(segmentsLayer);
-    segmentsLayer = L.geoJSON(gj, {
-      style: styleFeature,
-      onEachFeature: (f, l) => {
-        l.on("click", () => {
+    const url = `/bandas/${projectId}/${val}?t=${new Date().getTime()}`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Erro: ${response.status}`);
+      const arrayBuffer = await response.arrayBuffer();
+      const georaster = await parseGeoraster(arrayBuffer);
+      const newLayer = new GeoRasterLayer({
+        georaster: georaster, opacity: 0.8, resolution: 256, keepBuffer: false, updateWhenIdle: true
+      });
+      sentinelLayerGroup.addLayer(newLayer);
+      if (segmentsLayer) segmentsLayer.bringToFront();
+    } catch (err) {
+      console.error("[RASTER] Erro:", err);
+    }
+  });
+
+  map.on('zoomend', () => { if (segmentsLayer) segmentsLayer.bringToFront(); });
+
+  // --- CARREGAMENTO DE DADOS ---
+  async function loadData() {
+    try {
+      const r = await fetch(`/resultado_geojson?project_id=${projectId}`);
+      const gj = await r.json();
+      
+      const rA = await fetch(`/resultado_propagado?project_id=${projectId}&path=classificado.geojson`);
+      if (rA.ok) {
+        const gjA = await rA.json();
+        gjA.features.forEach(f => {
           const sid = f.properties.segment_id;
-          if (selectedIds.has(sid)) selectedIds.delete(sid);
-          else selectedIds.add(sid);
-          segmentsLayer.eachLayer(ly => ly.setStyle(styleFeature(ly.feature)));
+          const cl = f.properties.classe;
+          const cor_salva = f.properties.cor; 
+          if (sid != null && cl) {
+            classesCriadas[cl] = cor_salva || colorForClass(cl);
+            classBySegment.set(sid, { name: cl, color: classesCriadas[cl] });
+          }
         });
+        atualizarListaClasses();
       }
-    }).addTo(map);
+
+      if (segmentsLayer) map.removeLayer(segmentsLayer);
+      segmentsLayer = L.geoJSON(gj, {
+        style: styleFeature,
+        onEachFeature: (f, l) => {
+          l.on("click", () => {
+            const sid = f.properties.segment_id;
+            if (selectedIds.has(sid)) selectedIds.delete(sid);
+            else selectedIds.add(sid);
+            segmentsLayer.eachLayer(ly => ly.setStyle(styleFeature(ly.feature)));
+          });
+        }
+      }).addTo(map);
+    } catch (e) {
+      console.error("[LOAD] Erro ao carregar dados:", e);
+    }
   }
 
+  // --- EVENTOS DE UI ---
   document.getElementById("btnApplyClass")?.addEventListener("click", () => {
     const name = document.getElementById("className").value.trim().toLowerCase();
     const color = document.getElementById("classColor").value;

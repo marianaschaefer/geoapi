@@ -32,8 +32,8 @@ pillow==11.2.1
 tifffile==2025.5.10
 
 # --- Performance & Armazenamento ---
-pyarrow
-fastparquet
+pyarrow>=15.0.0
+fastparquet>=2024.2.0
 
 # --- Utilidades ---
 requests==2.32.3
