@@ -1,115 +1,76 @@
 /* ===================== */ 
-/* Reset CSS (SEU ORIGINAL) */
+/* Reset & Base CSS      */
 /* ===================== */
-html,
-body {
+* { box-sizing: border-box; }
+
+html, body {
     width: 100%;
     height: 100%;
     margin: 0;
     padding: 0;
-    font-family: "Poppins";
+    font-family: "Poppins", sans-serif;
     display: flex;
     flex-direction: column;
-    text-align: center;
+    overflow: hidden; /* Evita rolagem dupla na página toda */
 }
 
 header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1vh 10vh;
-    max-height: 7%;
+    padding: 10px 40px;
+    height: 65px; /* Altura fixa para o header */
+    background: #f4f4f4;
     border-bottom: 1px solid #ddece4;
-}
-
-.app-name p {
-    color: green;
-    font-size: 4.4vh;
-    font-family: "Poppins";
-}
-
-/* CORREÇÃO: era .rigth-corner */
-.right-corner {
-    display: flex;
-    align-items: center;
-    gap: 4vh;
-}
-
-.link-text {
-    font-size: 2.4vh;
-    color: rgb(0, 0, 0);
-    text-decoration: none;
-}
-
-.link-text:hover {
-    color: green;
-    text-decoration: underline;
-}
-
-.icon {
-    width: 5.5vh;
+    flex-shrink: 0;
 }
 
 .content {
-    max-height: 80%;
-    margin: 3vh 5vh;
+    flex-grow: 1; /* Ocupa todo o resto da tela abaixo do header */
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10vh;
+    overflow: hidden;
 }
 
-.title {
-    font-size: 3.5vh;
-    font-weight: 400;
-    margin-top: 3.5vh;
-}
-
+/* Container do Mapa */
 #map {
-    height: 35rem;
-    width: 55rem;
+    width: 100% !important;
+    height: 100% !important;
+    border: none !important;
+    background-color: #f0f0f0;
+    z-index: 1;
 }
 
-/* ... resto do seu CSS permanece igual ... */
+/* Áreas de Interação */
+.map-area {
+    flex: 3;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+}
 
-/* ===== v7 – UI refinada ===== */
-.logo { width: 28px; height: 28px; margin-right: 8px; }
-.app-name { display:flex; align-items:center; gap:8px; }
-.pill { display:inline-block; padding:2px 8px; background:#f3f6ff; border:1px solid #dfe6ff; color:#2d6cdf; border-radius:999px; font-size:12px; }
+.classification-hub, .panel {
+    flex: 1;
+    min-width: 340px;
+    max-width: 400px;
+    background: #fff;
+    border-left: 1px solid #ddd;
+    padding: 20px;
+    overflow-y: auto;
+    height: 100%;
+}
 
-#painel-segmentacao {
-  position: relative;
-  width: 380px;
-  max-width: 95vw;
-  background: #fff;
-  padding: 14px;
-  border-radius: 12px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.12);
-  font-size: 14px;
-  text-align: left;
+/* Utilitários */
+.btn-main, .save-class-btn {
+    width: 100%;
+    background: #187318;
+    color: white;
+    border: none;
+    padding: 12px;
+    cursor: pointer;
+    font-weight: bold;
+    border-radius: 4px;
+    margin-top: 10px;
 }
-#painel-segmentacao label { display:block; margin-top:8px; font-weight:600; }
-#painel-segmentacao input, #painel-segmentacao select {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
-  outline: none;
-}
-#painel-segmentacao input:focus, #painel-segmentacao select:focus {
-  border-color: #187318; box-shadow: 0 0 0 2px rgba(24,115,24,0.10);
-}
-.panel { background:#fff; padding:12px; border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.12); }
-.row { display:flex; gap:12px; align-items:center; }
-.row > * { flex:1; }
-.btn { border:0; border-radius:10px; padding:8px 12px; background:#187318; color:#fff; font-weight:600; cursor:pointer; }
-.btn:hover { filter:brightness(1.05); }
-.btn[disabled]{opacity:.6; cursor:not-allowed;}
-.spinner{ display:inline-block; width:18px; height:18px; border:3px solid #adffc3; border-top:3px solid #007406; border-radius:50%; animation:spin .6s linear infinite; }
-@keyframes spin{ to{ transform:rotate(360deg);} }
 
-@media (max-width: 1200px){
-  .content{ flex-direction:column; }
-  #map{ width:90vw; height:60vh; }
-  #painel-segmentacao{ width:90vw; }
-}
+.btn-main:hover, .save-class-btn:hover { filter: brightness(1.1); }

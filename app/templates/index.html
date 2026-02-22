@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>GEO API - Gestão de Projetos</title>
+  <title>GeoAPI - Segmentação e Classificação</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -41,7 +41,7 @@
 </head>
 <body>
   <header style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: #f4f4f4; border-bottom: 1px solid #ddd;">
-    <div style="font-weight: bold; color: #187318; font-size: 1.2em;">GEO APP v7</div>
+    <div style="font-weight: bold; color: #187318; font-size: 1.2em;">GeoAPI v3.0</div>
     <div>
       <span>Olá, <strong>{{ current_user.username }}</strong></span>
       <a href="{{ url_for('logout') }}" style="margin-left: 15px; color: #c0392b; text-decoration: none;">Sair</a>
@@ -55,7 +55,7 @@
     </div>
 
     <aside class="panel">
-      <h4>1. Localidade (Fonte: IBGE)</h4>
+      <h4>1. Escolha pela localidade (Fonte: IBGE) ou selecione um polígono no mapa</h4>
       <div class="section-box" style="background: #fdfdfd;">
         <select id="ibgeType" style="width: 100%; padding: 8px; margin-bottom: 8px;">
             <option value="municipios">Município</option>
@@ -73,7 +73,7 @@
         <label>Nome do Projeto</label>
         <input type="text" id="projectName" placeholder="Ex: Viçosa ASA V1" style="width: 100%; padding: 8px; margin: 8px 0;">
         
-        <label>Algoritmo</label>
+        <label>Algoritmo de Segmentação</label>
         <select id="algoritmoSelect" style="width: 100%; padding: 8px; margin: 8px 0 15px 0;">
           <option value="ASA">ASA</option>
           <option value="SLIC">SLIC</option>

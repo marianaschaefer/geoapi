@@ -2,9 +2,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from datetime import datetime
 import geopandas as gpd
+import pandas as pd
 from flask import (
     jsonify, render_template, send_from_directory,
     request, Response, send_file, redirect, url_for, flash, current_app
@@ -28,7 +30,7 @@ def _latest_propagado(project_id: int) -> Path | None:
     files = sorted(out_dir.glob("propagado_*.geojson"))
     return files[-1] if files else None
 
-# --- ROTAS DE AUTENTICAÇÃO (CORREÇÃO DO BUILDERROR) ---
+# --- ROTAS DE AUTENTICAÇÃO ---
 
 @current_app.route("/login", methods=["GET", "POST"])
 def login():
@@ -69,7 +71,6 @@ def logout():
 @current_app.route("/")
 @login_required
 def home():
-    # Filtra projetos para que o usuário veja apenas os seus próprios
     projetos = Project.query.filter_by(user_id=current_user.id).order_by(Project.date_created.desc()).all()
     return render_template("index.html", user=current_user, projetos=projetos)
 
@@ -77,17 +78,16 @@ def home():
 @login_required
 def excluir_projeto(project_id: int):
     projeto = Project.query.get_or_404(project_id)
-    # Validação de posse para evitar que um usuário delete projeto de outro
     if projeto.user_id != current_user.id:
         flash("Acesso negado.", "danger")
         return redirect(url_for("home"))
     try:
         out_dir = project_dir(project_id)
         if out_dir.exists():
-            shutil.rmtree(out_dir) # Remove pastas Sentinel-2 físicas
+            shutil.rmtree(out_dir)
         db.session.delete(projeto)
         db.session.commit()
-        flash(f"Projeto '{projeto.name}' removido com sucesso.", "success")
+        flash(f"Projeto '{projeto.name}' removido.", "success")
     except Exception as e:
         flash(f"Erro ao excluir: {e}", "danger")
     return redirect(url_for("home"))
@@ -103,18 +103,11 @@ def resultado():
 
 # --- APIs DE DADOS E PROCESSAMENTO ---
 
-@current_app.route("/api/ibge/<tipo>/<nome>")
-@login_required
-def api_ibge_localidade(tipo, nome):
-    resultado = buscar_geometria_ibge(tipo, nome)
-    return jsonify(resultado) if resultado else (jsonify({"erro": "Não encontrado"}), 404)
-
 @current_app.route("/api/segmentar", methods=["POST"])
 @login_required
 def api_segmentar():
     data = request.get_json() or {}
     bbox = data.get("bbox")
-    # Vincula o nome escolhido pelo usuário ao novo projeto
     nome_p = data.get("nome_projeto") or f"Projeto {datetime.now().strftime('%d/%m %H:%M')}"
     
     novo = Project(name=nome_p, bbox=json.dumps(bbox), user_id=current_user.id)
@@ -127,27 +120,11 @@ def api_segmentar():
     try:
         processar_segmentacao_completa(
             output_dir=str(out_dir), bbox=bbox, aoi_geojson=data.get("aoi_geojson"),
-            algoritmo=data.get("algoritmo", "SLIC"), region_px=int(data.get("region_px", 30)),
-            compactness=float(data.get("compactness", 1.0)), sigma=float(data.get("sigma", 1.0))
+            algoritmo=data.get("algoritmo", "SLIC")
         )
-        #build_features(output_dir=str(out_dir))
         return jsonify({"status": "sucesso", "project_id": novo.id}), 200
     except Exception as e:
         return jsonify({"status": "erro", "mensagem": str(e)}), 500
-
-@current_app.route("/resultado_geojson")
-@login_required
-def resultado_geojson():
-    project_id = request.args.get("project_id", type=int)
-    projeto = Project.query.get_or_404(project_id)
-    if projeto.user_id != current_user.id: return jsonify({"erro": "Negado"}), 403
-    
-    out_dir = project_dir(project_id)
-    files = list(out_dir.glob("segments*.geojson"))
-    if not files: return jsonify({"erro": "Não encontrado"}), 404
-    path = max(files, key=os.path.getmtime)
-    gdf = gpd.read_file(path)
-    return Response(gdf.to_json(), mimetype="application/json")
 
 @current_app.route("/salvar_classificacao", methods=["POST"])
 @login_required
@@ -170,24 +147,70 @@ def api_propagate():
     projeto = Project.query.get_or_404(project_id)
     if projeto.user_id != current_user.id: return jsonify({"erro": "Negado"}), 403
     
-    method = data.get("method")
+    result = propagate_labels(method=data.get("method"), params=data.get("params"), output_dir=str(project_dir(project_id)))
+    return jsonify(result)
+
+# --- EXPORTAÇÃO MULTI-FORMATO (NOVO) ---
+
+@current_app.route("/download/<int:project_id>/<filename>")
+@login_required
+def baixar_arquivo_projeto(project_id: int, filename: str):
+    projeto = Project.query.get_or_404(project_id)
+    if projeto.user_id != current_user.id: return "Acesso Negado", 403
+    
     out_dir = project_dir(project_id)
     
-    # Executa a propagação
-    result = propagate_labels(method=method, params=data.get("params"), output_dir=str(out_dir))
-    
-    # [NOVO] Lógica de nomeação organizada 
-    # O arquivo final será algo como: "resultado_ASA_label_spreading.geojson"
-    # Você poderá baixar esses arquivos depois para comparar no QGIS ou ArcGIS
-    return jsonify(result)
+    # Lógica de Conversão Dinâmica
+    try:
+        # 1. Exportar para CSV (Atributos)
+        if filename == "features.csv":
+            df = pd.read_parquet(out_dir / "features.parquet")
+            csv_path = out_dir / "features.csv"
+            df.to_csv(csv_path, index=False)
+            return send_from_directory(str(out_dir), "features.csv", as_attachment=True)
+
+        # 2. Exportar para SHAPEFILE (Amostras ou Resultado)
+        if filename.endswith(".shp"):
+            source_json = "classificado.geojson" if "amostras" in filename else "resultado_ultima_propagacao.geojson"
+            if not (out_dir / source_json).exists(): return "Arquivo base não encontrado", 404
+            
+            gdf = gpd.read_file(out_dir / source_json)
+            # Shapefile requer uma pasta ou ZIP pois são vários arquivos (.dbf, .shx, etc)
+            temp_shp_dir = Path(tempfile.mkdtemp())
+            shp_path = temp_shp_dir / filename
+            gdf.to_file(shp_path)
+            
+            # Zipar para download
+            zip_path = shutil.make_archive(str(temp_shp_dir / filename.replace(".shp", "")), 'zip', temp_shp_dir)
+            return send_file(zip_path, as_attachment=True, download_name=filename.replace(".shp", ".zip"))
+
+        # 3. Exportar TIF (Mapa Final - caso você tenha o rasterizado)
+        # Se você ainda não tem a função de rasterizar o GeoJSON, ele baixará o RGB original como fallback
+        if filename == "mapa_final.tif":
+            original_tif = out_dir / "RGB_composicao_8bit.tif"
+            return send_file(str(original_tif), as_attachment=True)
+
+        # 4. Comportamento Padrão (GeoJSON, Parquet, TIFs de bandas)
+        return send_from_directory(str(out_dir), filename, as_attachment=True)
+
+    except Exception as e:
+        return f"Erro na conversão: {str(e)}", 500
+
+@current_app.route("/resultado_geojson")
+@login_required
+def resultado_geojson():
+    project_id = request.args.get("project_id", type=int)
+    out_dir = project_dir(project_id)
+    files = list(out_dir.glob("segments*.geojson"))
+    if not files: return jsonify({"erro": "Não encontrado"}), 404
+    path = max(files, key=os.path.getmtime)
+    gdf = gpd.read_file(path)
+    return Response(gdf.to_json(), mimetype="application/json")
 
 @current_app.route("/resultado_propagado")
 @login_required
 def resultado_propagado():
     project_id = request.args.get("project_id", type=int)
-    projeto = Project.query.get_or_404(project_id)
-    if projeto.user_id != current_user.id: return jsonify({"erro": "Negado"}), 403
-    
     fname = request.args.get("path")
     out_dir = project_dir(project_id)
     path = out_dir / fname if fname else _latest_propagado(project_id)
@@ -198,17 +221,4 @@ def resultado_propagado():
 @current_app.route("/bandas/<int:project_id>/<nome>")
 @login_required
 def servir_banda(project_id: int, nome: str):
-    projeto = Project.query.get_or_404(project_id)
-    if projeto.user_id != current_user.id: return "Negado", 403
     return send_from_directory(str(project_dir(project_id)), nome)
-
-@current_app.route("/download/<int:project_id>/<filename>")
-@login_required
-def baixar_arquivo_projeto(project_id: int, filename: str):
-    projeto = Project.query.get_or_404(project_id)
-    if projeto.user_id != current_user.id:
-        return "Acesso Negado", 403
-    
-    # Busca o arquivo dentro da pasta específica do projeto
-    directory = str(project_dir(project_id))
-    return send_from_directory(directory, filename, as_attachment=True)

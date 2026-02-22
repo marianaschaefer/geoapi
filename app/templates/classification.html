@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>GEO API — Classificação</title>
+  <title>GeoAPI — Segmentação, Classificação & Active Learning</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -13,13 +13,25 @@
   <style>
     .content { display: flex; height: calc(100vh - 65px); }
     .map-area { flex: 3; position: relative; padding: 15px; display: flex; flex-direction: column; }
-    #map { flex-grow: 1; width: 100%; border-radius: 8px; border: 1px solid #ddd; }
+    #map { flex-grow: 1; width: 100%; border-radius: 8px; border: 1px solid #ddd; z-index: 1; }
+    
     .classification-hub { flex: 1; min-width: 320px; padding: 20px; overflow-y: auto; background: #fff; border-left: 1px solid #ddd; }
+    
     .method-box { background: #f9f9f9; padding: 12px; border-radius: 6px; border: 1px solid #ddd; margin: 15px 0; }
     
     /* Estilo para lista de classes */
     #class-list { list-style: none; padding: 0; margin-top: 10px; }
     #class-list li { padding: 5px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+
+    /* Novo: Estilo para controles de Active Learning */
+    .al-controls {
+        background: #fffbe6;
+        border: 1px solid #ffe58f;
+        padding: 10px;
+        border-radius: 6px;
+        margin-top: 10px;
+        font-size: 0.9em;
+    }
 
     /* Estilo para botões de download */
     .btn-download {
@@ -37,68 +49,96 @@
     }
     .btn-download:hover { background: #e9ecef; border-color: #bbb; }
     
-    .save-class-btn { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    .save-class-btn { width: 100%; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: filter 0.2s; }
+    .save-class-btn:hover { filter: brightness(1.1); }
   </style>
   <script>window.__PROJECT_ID__ = {{ project_id|int }};</script>
 </head>
 <body>
-<header style="display: flex; justify-content: space-between; padding: 10px 20px; background: #f4f4f4;">
-  <div style="display: flex; gap: 15px;">
+<header style="display: flex; justify-content: space-between; padding: 10px 20px; background: #f4f4f4; align-items: center;">
+  <div style="display: flex; gap: 15px; align-items: center;">
     <a href="{{ url_for('home') }}" style="text-decoration: none;">🏠 Home</a>
+    <span style="color: #ccc;">|</span>
     <strong>Projeto: {{ projeto.name }}</strong>
+  </div>
+  <div class="pill" style="background: #e6f7ff; border: 1px solid #91d5ff; color: #1890ff; padding: 2px 10px; border-radius: 4px; font-size: 0.8em;">
+    Sentinel-2 L2A
   </div>
 </header>
 
 <div class="content">
   <div class="map-area">
     <div id="map"></div>
-    <div style="margin-top:10px; display: flex; gap: 15px; align-items: center;">
-      <label><input type="checkbox" id="chkProp"> Mostrar resultado propagado</label>
-      <select id="band-options" style="flex: 1; padding: 5px;">
-          <option value="original">Original (Mapa Base)</option>
-          <option value="RGB_composicao_8bit.tif">Cor Verdadeira (RGB)</option>
-          <option value="Falsa_Cor_Veg.tif">Mata (NIR-R-G)</option>
-          <option value="Agricultura_Solo.tif">Solo/Urbano (SWIR-NIR-B)</option>
-          <option value="B08.tif">Infravermelho (NIR)</option>
-      </select>
+    
+    <div style="margin-top:10px; display: flex; gap: 20px; align-items: center; background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
+      <div style="display: flex; gap: 15px;">
+        <label title="Exibe a predição do modelo de ML">
+            <input type="checkbox" id="chkProp"> <b>Ver Classificação</b>
+        </label>
+        <label style="color: #d4380d; font-weight: bold;" title="Destaque de polígonos com alta Entropia de Shannon">
+            <input type="checkbox" id="chkUncertainty"> 🔍 Sugerir Amostras (AL)
+        </label>
+      </div>
+      
+      <div style="flex-grow: 1; display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 0.85em; color: #666;">Composição:</span>
+        <select id="band-options" style="flex: 1; padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
+            <option value="original">Original (Mapa Base)</option>
+            <option value="RGB_composicao_8bit.tif">Cor Verdadeira (RGB)</option>
+            <option value="Falsa_Cor_Veg.tif">Mata (NIR-R-G)</option>
+            <option value="Agricultura_Solo.tif">Solo/Urbano (SWIR-NIR-B)</option>
+            <option value="B08.tif">Infravermelho (NIR)</option>
+        </select>
+      </div>
     </div>
   </div>
 
   <div class="classification-hub">
-    <h4>Amostragem (Active Learning)</h4>
-    <div class="new-class">
-      <input id="className" type="text" placeholder="Ex: Mata" style="width:60%;">
-      <input id="classColor" type="color" value="#00ff00">
-      <button id="btnApplyClass">Aplicar</button>
+    <h4>Amostragem</h4>
+    
+    <div class="new-class" style="display: flex; gap: 5px; align-items: center;">
+      <input id="className" type="text" placeholder="Ex: Mata" style="flex-grow: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+      <input id="classColor" type="color" value="#00ff00" style="width: 40px; height: 35px; border: none; padding: 0; background: none; cursor: pointer;">
+      <button id="btnApplyClass" style="padding: 8px 12px; background: #52c41a; color: white; border: none; border-radius: 4px; cursor: pointer;">OK</button>
     </div>
     
     <div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;">
-      <p style="font-weight: bold; font-size: 0.85em; margin-bottom: 5px;">Classes Criadas:</p>
+      <p style="font-weight: bold; font-size: 0.85em; margin-bottom: 5px; color: #555;">Legenda do Usuário:</p>
       <ul id="class-list"></ul>
     </div>
 
     <div class="method-box">
-      <label><strong>Algoritmo de ML:</strong></label>
-      <select id="mlMethod" style="width: 100%; margin-top: 5px; padding: 5px;">
+      <label><strong>Estratégia de Propagação:</strong></label>
+      <select id="mlMethod" style="width: 100%; margin-top: 5px; padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
         <option value="Label Spreading">Label Spreading</option>
         <option value="Label Propagation">Label Propagation</option>
-        <option value="Self-Training (Random Forest)">Self-Training (Random Forest)</option>
+        <option value="Self-Training (Random Forest)">Self-Training (RF))</option>
       </select>
-    </div>
-
-    <button id="btnSalvar" class="save-class-btn" style="width:100%; margin-bottom:10px; background:#007bff; color: white;">Salvar Amostras</button>
-    <button id="btnPropagar" class="save-class-btn" style="width:100%; background: #28a745; color: white;">Propagar Rótulos</button>
-
-    <div style="margin-top: 25px; border-top: 2px solid #ddd; padding-top: 15px;">
-      <h5 style="margin-bottom: 10px;">Exportar Dados do Artigo</h5>
-      <div style="display: flex; flex-direction: column;">
-        <a href="/download/{{ project_id }}/classificado.geojson" class="btn-download">Amostras (GeoJSON)</a>
-        <a href="/download/{{ project_id }}/resultado_ultima_propagacao.geojson" class="btn-download" style="background:#eef;">Classificação Final (GeoJSON)</a>
-        <a href="/download/{{ project_id }}/features.parquet" class="btn-download" style="font-size: 0.8em;">Atributos Estatísticos (Parquet)</a>
+      <div style="font-size: 0.75em; color: #888; margin-top: 5px;">
+        * O motor v3.0 calcula automaticamente a incerteza via Entropia de Shannon.
       </div>
     </div>
+
+    <button id="btnSalvar" class="save-class-btn" style="margin-bottom:10px; background:#007bff; color: white;">1. Salvar Amostras Atuais</button>
+    <button id="btnPropagar" class="save-class-btn" style="background: #28a745; color: white;">2. Propagar e Calcular AL</button>
+
+    <div style="margin-top: 25px; border-top: 2px solid #ddd; padding-top: 15px;">
+      <h5 style="margin-bottom: 10px;">Exportar dados</h5>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+          <a href="/download/{{ project_id }}/classificado.geojson" class="btn-download">Amostras (GeoJSON)</a>
+          <a href="/download/{{ project_id }}/amostras.shp" class="btn-download">Amostras (SHP)</a>
+          
+          <a href="/download/{{ project_id }}/resultado_ultima_propagacao.geojson" class="btn-download" style="background:#eef;">Mapa Final (GeoJSON)</a>
+          <a href="/download/{{ project_id }}/mapa_final.tif" class="btn-download" style="background:#eef;">Mapa Final (TIF)</a>
+          
+          <a href="/download/{{ project_id }}/features.parquet" class="btn-download">Atributos (Parquet)</a>
+          <a href="/download/{{ project_id }}/features.csv" class="btn-download">Atributos (CSV)</a>
+      </div>
+    </div>
+
   </div>
 </div>
+
 <script defer src="{{ url_for('static', filename='script_classification.js') }}"></script>
 </body>
 </html>

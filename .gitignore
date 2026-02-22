@@ -28,6 +28,8 @@ SENTINEL2_BANDAS/*.csv
 SENTINEL2_BANDAS/*.shp
 SENTINEL2_BANDAS/*.dbf
 
+SENTINEL2_BANDAS/
+!SENTINEL2_BANDAS/.gitkeep  # (Opcional) Se quiser manter a pasta vazia no GitHub
 # --- Configurações Locais e Sensíveis ---
 .env
 .flaskenv
