@@ -1,13 +1,15 @@
----GeoApi v3.0 — Segmentação, Classificação e Active Learning---
+---GeoApi v3.1 — Segmentação, Classificação e Active Learning---
 
 Aplicação Web SIG (Sistema de Informações Geográficas) integrada ao Sentinel-2, projetada para segmentação de imagens e classificação semi-supervisionada em ciclo iterativo human-in-the-loop.
 
-Novidades da v3.0
+Novidades da v3.1
 Active Learning: Implementação de Entropia de Shannon para sugerir áreas de coleta de amostras onde o modelo possui menor confiança.
 
 Exportação Multi-formato: Suporte nativo para download de amostras e mapas finais em Shapefile, GeoJSON, CSV e GeoTIFF.
 
 Cores das classes: Dicionário de classes inteligente que mantém a consistência de cores entre sessões de coletas de amostras.
+
++ correção de exportação de raster.
 
 -------
 
@@ -17,7 +19,7 @@ Active Learning: Ciclo interativo de amostragem, treinamento e correção de ró
 
 Extração de Atributos: Geração de estatísticas de bandas (média, desvio padrão) e índices espectrais (NDVI, EVI, NDSI, NDBI) salvos em formato Apache Parquet.
 
-ML Semi-Supervisionado: Implementação de algoritmos do sklearn.semi_supervised (LabelPropagation, LabelSpreading e SelfTrainingClassifier) para propagação de rótulos.
+ML Semi-Supervisionado: Implementação de algoritmos do sklearn.semi_supervised (LabelSpreading e SelfTrainingClassifier) para propagação de rótulos.
 
 Integração IBGE: Busca automática de malhas territoriais oficiais de municípios e estados brasileiros para definição de área de estudo (AOI).
 
@@ -45,7 +47,7 @@ Acesse no navegador: http://localhost:5000
 ----Metodologia
 O fluxo de trabalho da ferramenta segue os padrões de sensoriamento remoto para classificação baseada em objetos (OBIA):
 
-Segmentação: Utiliza o algoritmo SLIC (Simple Linear Iterative Clustering) ou ASA para agrupar pixels em superpixels homogêneos.
+Segmentação: Utiliza o algoritmo SLIC (Simple Linear Iterative Clustering) ou ASA (A-priori Shape Adaptive) para agrupar pixels em superpixels homogêneos.
 
 Composição de Bandas: Permite visualização em Cor Real (RGB), Falsa Cor Vegetação (B8-B4-B3) e Solo/Urbano (B11-B8-B2) para facilitar a interpretação do analista.
 
@@ -61,4 +63,5 @@ Ao final do processo, o projeto gera na pasta SENTINEL2_BANDAS/projects/<id>:
 segments.geojson: Vetores da segmentação original.
 features.parquet / .csv: Banco de dados tabular com atributos estatísticos.
 classificado.geojson / .shp: Amostras coletadas (Expert knowledge).
+
 mapa_final.geojson / .zip (SHP): Classificação temática final com metadados de incerteza.
