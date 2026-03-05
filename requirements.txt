@@ -40,3 +40,5 @@ fastparquet==2024.2.0
 requests==2.32.3
 urllib3==2.4.0
 tqdm==4.67.1
+
+morecantile==6.1.0

@@ -22,21 +22,17 @@
     .section-box { background: #f0f7f0; padding: 15px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #e0eee0; }
     h4 { margin-top: 0; color: #187318; border-bottom: 1px solid #c8e6c8; padding-bottom: 5px; margin-bottom: 10px; }
 
-    .project-item { 
-      display: flex; align-items: center; gap: 12px; padding: 10px; 
-      border-bottom: 1px solid #eee; transition: background 0.2s;
-    }
-    .project-item:hover { background: #f9fdf9; }
+    .project-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-bottom: 1px solid #eee; }
     .project-link { flex-grow: 1; text-decoration: none; color: #333; }
     
-    .batch-header {
-      background: #fff1f0; padding: 10px; margin-bottom: 15px; 
-      border-radius: 4px; border: 1px solid #ffccc7; display: none;
-    }
-    .btn-main {
-      width: 100%; background: #187318; color: white; border: none; 
-      padding: 12px; cursor: pointer; font-weight: bold; border-radius: 4px;
-    }
+    .btn-main { width: 100%; background: #187318; color: white; border: none; padding: 12px; cursor: pointer; font-weight: bold; border-radius: 4px; }
+    
+    .preset-table { width: 100%; border-collapse: collapse; font-size: 0.7em; margin-top: 10px; background: white; cursor: pointer; }
+    .preset-table th, .preset-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
+    .preset-table th { background: #f4f4f4; color: #333; }
+    .preset-table tr:hover:not(.group-header) { background: #e8f5e8; border: 1px solid #187318; }
+    .group-header { background: #e0eee0; font-weight: bold; cursor: default; text-align: left !important; padding-left: 10px; }
+    .active-preset { background: #d0f0d0 !important; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -55,7 +51,7 @@
     </div>
 
     <aside class="panel">
-      <h4>1. Escolha pela localidade (Fonte: IBGE) ou selecione um polígono no mapa</h4>
+      <h4>1. Localidade (IBGE) ou Desenho</h4>
       <div class="section-box" style="background: #fdfdfd;">
         <select id="ibgeType" style="width: 100%; padding: 8px; margin-bottom: 8px;">
             <option value="municipios">Município</option>
@@ -68,62 +64,110 @@
         <small id="ibgeStatus" style="display: block; margin-top: 5px; color: #666;"></small>
       </div>
 
-      <h4>2. Configurar Projeto</h4>
+      <h4>2. Configurar Projeto & Segmentação</h4>
       <div class="section-box">
         <label>Nome do Projeto</label>
-        <input type="text" id="projectName" placeholder="Ex: Viçosa ASA V1" style="width: 100%; padding: 8px; margin: 8px 0;">
+        <input type="text" id="projectName" placeholder="Ex: Analise LULC V1" style="width: 100%; padding: 8px; margin: 8px 0;">
         
-        <label>Algoritmo de Segmentação</label>
-        <select id="algoritmoSelect" style="width: 100%; padding: 8px; margin: 8px 0 15px 0;">
-          <option value="ASA">ASA</option>
-          <option value="SLIC">SLIC</option>
+        <label>Algoritmo</label>
+        <select id="algoritmoSelect" style="width: 100%; padding: 8px; margin: 8px 0;">
+          <option value="ASA">ASA (A-priori Shape Adaptive)</option>
+          <option value="SLIC">SLIC (Simple Linear Iterative Clustering)</option>
         </select>
-        
+
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+          <div style="flex: 1;">
+            <label style="font-size: 0.8em; font-weight: bold;">Superpixel Size</label>
+            <input type="number" id="region_px" value="100" style="width: 100%; padding: 5px;">
+          </div>
+          <div style="flex: 1;">
+            <label style="font-size: 0.8em; font-weight: bold;">Compactness</label>
+            <input type="number" id="compactness" value="1.0" step="0.1" style="width: 100%; padding: 5px;">
+          </div>
+        </div>
+
+        <div style="margin-top: 10px; margin-bottom: 15px;">
+          <label style="font-size: 0.8em; font-weight: bold;">Sigma (Smoothing)</label>
+          <input type="number" id="sigma" value="1.0" step="0.1" style="width: 100%; padding: 5px;">
+        </div>
+
+        <div style="margin-top: 10px; margin-bottom: 15px;">
+          <label style="font-size: 0.8em; font-weight: bold;">Máximo de Nuvens (%)</label>
+          <input type="number" id="cloud_cover" value="10" min="0" max="100" style="width: 100%; padding: 5px;">
+        </div>
+
         <button id="btnSegmentar" class="btn-main">CRIAR E PROCESSAR</button>
       </div>
 
-      <h4>📁 Meus Projetos</h4>
-      
-      <div id="batchArea" class="batch-header">
-        <span id="countSelected" style="font-size: 0.85em; font-weight: bold; color: #cf1322;">0 selecionados</span>
-        <button onclick="confirmBatchDelete()" style="float:right; color:#cf1322; border:1px solid #cf1322; background:white; border-radius:3px; padding:2px 6px; cursor:pointer; font-size: 0.75em;">
-          Excluir Selecionados
-        </button>
+      <h4>Presets Sugeridos (Sentinel-2)</h4>
+      <div class="section-box" style="padding: 5px; background: #fff;">
+        <table class="preset-table" id="tablePresets">
+          <thead>
+            <tr>
+              <th>Uso</th>
+              <th>Sigma</th>
+              <th>Comp.</th>
+              <th>Size</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="group-header"><td colspan="4">SLIC</td></tr>
+            <tr data-algo="SLIC" data-sigma="0.5" data-comp="5" data-size="25">
+              <td><strong>Detalhe Máximo (Ex: Urbano)</strong></td><td>0.5</td><td>5</td><td>25</td></tr>
+            <tr data-algo="SLIC" data-sigma="1.0" data-comp="10" data-size="50">
+              <td><strong>Detalhe Alto (Misto)</strong></td><td>1.0</td><td>10</td><td>50</td></tr>
+            <tr data-algo="SLIC" data-sigma="1.2" data-comp="15" data-size="100">
+              <td><strong>Equilíbrio</strong></td><td>1.2</td><td>15</td><td>100</td></tr>
+            <tr data-algo="SLIC" data-sigma="2.0" data-comp="20" data-size="200">
+              <td><strong>Detalhe Baixo (Áreas + homogêneas)</strong></td><td>2.0</td><td>20</td><td>200</td></tr>
+            
+            <tr class="group-header"><td colspan="4">ASA</td></tr>
+            <tr data-algo="ASA" data-sigma="0.5" data-comp="1.0" data-size="25">
+              <td><strong>Detalhe Máximo</strong></td><td>0.5</td><td>1.0</td><td>25</td></tr>
+            <tr data-algo="ASA" data-sigma="1.0" data-comp="1.0" data-size="50">
+              <td><strong>Detalhe Moderado</strong></td><td>1.0</td><td>1.0</td><td>50</td></tr>
+            <tr data-algo="ASA" data-sigma="1.2" data-comp="1.0" data-size="100">
+              <td><strong>Equilíbrio</strong></td><td>1.2</td><td>1.0</td><td>100</td></tr>
+            <tr data-algo="ASA" data-sigma="2.0" data-comp="1.0" data-size="200">
+              <td><strong>Detalhe Baixo</strong></td><td>2.0</td><td>1.0</td><td>200</td></tr>
+          </tbody>
+        </table>
+        <p style="font-size: 0.65em; color: #777; margin-top: 5px; padding: 0 5px;">
+          * Clique em uma linha para aplicar os valores.
+        </p>
       </div>
 
+      <h4>📁 Meus Projetos</h4>
       <ul style="list-style: none; padding: 0; margin-top: 10px;">
         {% for p in projetos %}
         <li class="project-item">
-          <input type="checkbox" class="project-check" value="{{ p.id }}" onchange="updateBatchUI()" style="transform: scale(1.1);">
-          
           <a href="{{ url_for('resultado', project_id=p.id) }}" class="project-link">
             <strong>{{ p.name }}</strong><br>
-            <small style="color: #888;">{{ p.date_created.strftime('%d/%m/%Y %H:%M') }}</small>
+            <small>{{ p.date_created.strftime('%d/%m/%Y %H:%M') }}</small>
           </a>
         </li>
-        {% else %}
-        <li style="padding: 20px; text-align: center; color: #999;">Nenhum projeto encontrado.</li>
         {% endfor %}
       </ul>
     </aside>
   </div>
 
   <script>
-    function updateBatchUI() {
-      const selected = document.querySelectorAll('.project-check:checked').length;
-      const batchArea = document.getElementById('batchArea');
-      batchArea.style.display = selected > 0 ? 'block' : 'none';
-      document.getElementById('countSelected').textContent = `${selected} projeto(s) selecionado(s)`;
-    }
+    document.querySelectorAll('#tablePresets tbody tr').forEach(row => {
+      // Verifica se a linha possui o atributo data-algo antes de adicionar o evento
+      if (row.dataset.algo) {
+        row.addEventListener('click', () => {
+          document.querySelectorAll('#tablePresets tbody tr').forEach(r => r.classList.remove('active-preset'));
+          row.classList.add('active-preset');
 
-    async function confirmBatchDelete() {
-      if (!confirm("Excluir permanentemente os projetos selecionados e seus arquivos?")) return;
-      const ids = Array.from(document.querySelectorAll('.project-check:checked')).map(cb => cb.value);
-      for (const id of ids) {
-        await fetch(`/projeto/excluir/${id}`, { method: 'POST' });
+          document.getElementById('algoritmoSelect').value = row.dataset.algo;
+          document.getElementById('sigma').value = row.dataset.sigma;
+          document.getElementById('compactness').value = row.dataset.comp;
+          document.getElementById('region_px').value = row.dataset.size;
+          
+          console.log(`Preset aplicado: ${row.dataset.algo}`);
+        });
       }
-      location.reload();
-    }
+    });
   </script>
 </body>
 </html>

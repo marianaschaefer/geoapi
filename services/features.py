@@ -63,7 +63,7 @@ def _compute_indices(ref: np.ndarray, band_to_idx: Dict[str, int]) -> Dict[str, 
 
     # Mantidos (se quiser remover depois, ok)
     ndbi = (SWIR1 - NIR) / (SWIR1 + NIR + eps)
-    mndwi = (G - SWIR1) / (G + SWIR1 + eps)  # igual ao NDSI (mesma fórmula); se quiser, removemos um dos dois.
+    mndwi = (G - SWIR1) / (G + SWIR1 + eps)  # igual ao NDSI (mesma fórmula)
     evi = 2.5 * (NIR - R) / (NIR + 6 * R - 7.5 * B + 1.0)
     nbr = (NIR - SWIR2) / (NIR + SWIR2 + eps)
 

@@ -76,7 +76,7 @@
             <input type="checkbox" id="chkProp"> <b>Ver Classificação</b>
         </label>
         <label style="color: #d4380d; font-weight: bold;" title="Destaque de polígonos com alta Entropia de Shannon">
-            <input type="checkbox" id="chkUncertainty"> 🔍 Sugerir Amostras (AL)
+            <input type="checkbox" id="chkUncertainty"> Sugerir Amostras (AL)
         </label>
       </div>
       
@@ -111,16 +111,15 @@
       <label><strong>Estratégia de Propagação:</strong></label>
       <select id="mlMethod" style="width: 100%; margin-top: 5px; padding: 8px; border-radius: 4px; border: 1px solid #ccc;">
         <option value="Label Spreading">Label Spreading</option>
-        <option value="Label Propagation">Label Propagation</option>
-        <option value="Self-Training (Random Forest)">Self-Training (RF))</option>
+        <option value="Self-Training (Random Forest)">Self-Training (Random Forest)</option>
       </select>
       <div style="font-size: 0.75em; color: #888; margin-top: 5px;">
-        * O motor v3.0 calcula automaticamente a incerteza via Entropia de Shannon.
+        * A incerteza é automaticamente calculada via Entropia de Shannon.
       </div>
     </div>
 
-    <button id="btnSalvar" class="save-class-btn" style="margin-bottom:10px; background:#007bff; color: white;">1. Salvar Amostras Atuais</button>
-    <button id="btnPropagar" class="save-class-btn" style="background: #28a745; color: white;">2. Propagar e Calcular AL</button>
+    <button id="btnSalvar" class="save-class-btn" style="margin-bottom:10px; background:#007bff; color: white;">1. Salvar amostras atuais</button>
+    <button id="btnPropagar" class="save-class-btn" style="background: #28a745; color: white;">2. Propagar e calcular incerteza</button>
 
     <div style="margin-top: 25px; border-top: 2px solid #ddd; padding-top: 15px;">
       <h5 style="margin-bottom: 10px;">Exportar dados</h5>

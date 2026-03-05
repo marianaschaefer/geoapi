@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from datetime import datetime
+
 import geopandas as gpd
 import pandas as pd
 from flask import (
@@ -19,6 +20,11 @@ from services.segmentation import processar_segmentacao_completa
 from services.features import build_features
 from services.propagation import propagate_labels
 
+from rio_tiler.io import Reader
+from rio_tiler.errors import TileOutsideBounds
+from rio_tiler.utils import render
+import morecantile
+
 BASE_DIR = Path(__file__).resolve().parents[1]
 S2_DIR = BASE_DIR / "SENTINEL2_BANDAS"
 
@@ -29,8 +35,6 @@ def _latest_propagado(project_id: int) -> Path | None:
     out_dir = project_dir(project_id)
     files = sorted(out_dir.glob("propagado_*.geojson"))
     return files[-1] if files else None
-
-# --- ROTAS DE AUTENTICAÇÃO ---
 
 @current_app.route("/login", methods=["GET", "POST"])
 def login():
@@ -66,8 +70,6 @@ def logout():
     logout_user()
     return redirect(url_for("login"))
 
-# --- GESTÃO DE PROJETOS ---
-
 @current_app.route("/")
 @login_required
 def home():
@@ -101,7 +103,15 @@ def resultado():
         return redirect(url_for("home"))
     return render_template("classification.html", project_id=project_id, projeto=projeto)
 
-# --- APIs DE DADOS E PROCESSAMENTO ---
+@current_app.route("/api/ibge/<tipo>/<nome>")
+@login_required
+def api_ibge(tipo, nome):
+    try:
+        data = buscar_geometria_ibge(tipo, nome)
+        if not data: return jsonify({"erro": "Localidade não encontrada"}), 404
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
 
 @current_app.route("/api/segmentar", methods=["POST"])
 @login_required
@@ -120,7 +130,11 @@ def api_segmentar():
     try:
         processar_segmentacao_completa(
             output_dir=str(out_dir), bbox=bbox, aoi_geojson=data.get("aoi_geojson"),
-            algoritmo=data.get("algoritmo", "SLIC")
+            algoritmo=data.get("algoritmo", "SLIC"),
+            cloud_cover=data.get("cloud_cover", 10),
+            sigma=data.get("sigma", 1.0),
+            compactness=data.get("compactness", 1.0),
+            region_px=data.get("region_px", 100)
         )
         return jsonify({"status": "sucesso", "project_id": novo.id}), 200
     except Exception as e:
@@ -150,51 +164,64 @@ def api_propagate():
     result = propagate_labels(method=data.get("method"), params=data.get("params"), output_dir=str(project_dir(project_id)))
     return jsonify(result)
 
-# --- EXPORTAÇÃO MULTI-FORMATO (NOVO) ---
-
 @current_app.route("/download/<int:project_id>/<filename>")
 @login_required
 def baixar_arquivo_projeto(project_id: int, filename: str):
     projeto = Project.query.get_or_404(project_id)
     if projeto.user_id != current_user.id: return "Acesso Negado", 403
-    
     out_dir = project_dir(project_id)
     
-    # Lógica de Conversão Dinâmica
     try:
-        # 1. Exportar para CSV (Atributos)
         if filename == "features.csv":
             df = pd.read_parquet(out_dir / "features.parquet")
             csv_path = out_dir / "features.csv"
             df.to_csv(csv_path, index=False)
             return send_from_directory(str(out_dir), "features.csv", as_attachment=True)
 
-        # 2. Exportar para SHAPEFILE (Amostras ou Resultado)
         if filename.endswith(".shp"):
             source_json = "classificado.geojson" if "amostras" in filename else "resultado_ultima_propagacao.geojson"
             if not (out_dir / source_json).exists(): return "Arquivo base não encontrado", 404
-            
             gdf = gpd.read_file(out_dir / source_json)
-            # Shapefile requer uma pasta ou ZIP pois são vários arquivos (.dbf, .shx, etc)
             temp_shp_dir = Path(tempfile.mkdtemp())
             shp_path = temp_shp_dir / filename
             gdf.to_file(shp_path)
-            
-            # Zipar para download
             zip_path = shutil.make_archive(str(temp_shp_dir / filename.replace(".shp", "")), 'zip', temp_shp_dir)
             return send_file(zip_path, as_attachment=True, download_name=filename.replace(".shp", ".zip"))
 
-        # 3. Exportar TIF (Mapa Final - caso você tenha o rasterizado)
-        # Se você ainda não tem a função de rasterizar o GeoJSON, ele baixará o RGB original como fallback
         if filename == "mapa_final.tif":
-            original_tif = out_dir / "RGB_composicao_8bit.tif"
-            return send_file(str(original_tif), as_attachment=True)
+            os.sync() if hasattr(os, 'sync') else None
+            caminho_tif = out_dir / "classificacao_final.tif"
+            print(f"Tentando baixar: {caminho_tif} | Existe? {caminho_tif.exists()}")
+            if not caminho_tif.exists():
+                flash("O mapa rasterizado (.tif) não foi encontrado no servidor. Tente 'Propagar' novamente.", "danger")
+                return redirect(url_for('resultado', project_id=project_id))
+            return send_file(
+                str(caminho_tif), 
+                as_attachment=True, 
+                download_name=f"classificacao_projeto_{project_id}.tif",
+                mimetype='image/tiff'
+            )
 
-        # 4. Comportamento Padrão (GeoJSON, Parquet, TIFs de bandas)
         return send_from_directory(str(out_dir), filename, as_attachment=True)
-
     except Exception as e:
         return f"Erro na conversão: {str(e)}", 500
+
+@current_app.route("/tiles/<int:project_id>/<nome>/<int:z>/<int:x>/<int:y>.png")
+@login_required
+def servir_tiles(project_id: int, nome: str, z: int, x: int, y: int):
+    out_dir = project_dir(project_id)
+    raster_path = out_dir / nome
+    if not raster_path.exists(): return Response(status=404)
+    tms = morecantile.tms.get("WebMercatorQuad")
+    try:
+        with Reader(str(raster_path), tms=tms) as src:
+            tile = src.tile(x, y, z, tilesize=256)
+            content = render(tile.data, mask=tile.mask)
+            resp = Response(content, mimetype="image/png")
+            resp.headers["Cache-Control"] = "public, max-age=60"
+            return resp
+    except TileOutsideBounds: return Response(status=204)
+    except Exception as e: return jsonify({"erro": str(e)}), 500
 
 @current_app.route("/resultado_geojson")
 @login_required
@@ -217,8 +244,3 @@ def resultado_propagado():
     if not path or not path.exists(): return jsonify({"erro": "Não encontrado"}), 404
     gdf = gpd.read_file(path)
     return Response(gdf.to_json(), mimetype="application/json")
-
-@current_app.route("/bandas/<int:project_id>/<nome>")
-@login_required
-def servir_banda(project_id: int, nome: str):
-    return send_from_directory(str(project_dir(project_id)), nome)

@@ -10,14 +10,23 @@ document.addEventListener("DOMContentLoaded", async function () {
     const map = L.map("map").setView([-15.78, -47.93], 5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
+    // pane próprio para rasters Sentinel
+    map.createPane("sentinelPane");
+    map.getPane("sentinelPane").style.zIndex = 250;
+
     const forceResize = () => {
         map.invalidateSize();
         if (bbox) map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
     };
     setTimeout(forceResize, 250);
 
-    const sentinelLayerGroup = L.layerGroup().addTo(map);
-    let segmentsLayer = null; 
+    const sentinelLayerGroup = L.layerGroup().addTo(map); // mantido (não usado com tiles)
+    let segmentsLayer = null;
+
+    // controle do raster (mantido, mas agora via tile layer)
+    let currentRasterLayer = null;   // agora: L.TileLayer
+    let rasterReqId = 0;             // ainda útil
+    let rasterAbort = null;          // não usado com tileLayer (mantido)
     
     // Estados da Aplicação
     const classBySegment = new Map();
@@ -31,7 +40,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 
     // --- 2. GESTÃO DE CORES E UI ---
 
-    // Recupera cor automaticamente ao digitar nome existente
     document.getElementById("className")?.addEventListener("input", (e) => {
         const nome = e.target.value.trim().toLowerCase();
         if (classesCriadas[nome]) {
@@ -57,7 +65,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
     }
 
-    // --- 3. LÓGICA DE ESTILO VETORIAL (ACTIVE LEARNING) ---
+    // --- 3. LÓGICA DE ESTILO VETORIAL ---
 
     function styleFeature(feature) {
         const sid = feature.properties.segment_id;
@@ -73,21 +81,17 @@ document.addEventListener("DOMContentLoaded", async function () {
             dashArray: null
         };
 
-        // Regra 1: Amostra Coletada (Preenchimento Sólido)
         if (manual) {
             style.fillColor = manual.color;
             style.fillOpacity = 0.8;
             style.weight = 1.5;
             style.color = "#000";
         } 
-        // Regra 2: Resultado ML (Preenchimento Médio)
         else if (showPropagated && prop) {
             style.fillColor = colorForClass(prop);
             style.fillOpacity = 0.5;
         }
 
-        // Regra 3: Sugestão AL (BORDA GROSSA E TRACEJADA - Sem cor de fundo)
-        // Isso permite ver o satélite por baixo enquanto destaca a dúvida do modelo
         if (showUncertainty && uValue > 0.6 && !manual) {
             style.color = uValue > 0.85 ? "#ff0000" : "#ff8c00"; 
             style.weight = 3.5;
@@ -95,7 +99,6 @@ document.addEventListener("DOMContentLoaded", async function () {
             if (!manual && !prop) style.fillOpacity = 0; 
         }
 
-        // Regra 4: Seleção (Destaque Ciano)
         if (selectedIds.has(sid)) {
             style.color = "#00ffff";
             style.weight = 4;
@@ -105,7 +108,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         return style;
     }
 
-    // --- 4. CARREGAMENTO E SINCRONIZAÇÃO ---
+    // --- 4. CARREGAMENTO ---
 
     async function loadData() {
         try {
@@ -141,7 +144,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         } catch (e) { console.error("Erro loadData:", e); }
     }
 
-    // --- 5. EVENTOS DE INTERFACE ---
+    // --- 5. EVENTOS ---
 
     document.getElementById("btnApplyClass")?.addEventListener("click", () => {
         const name = document.getElementById("className").value.trim().toLowerCase();
@@ -156,22 +159,39 @@ document.addEventListener("DOMContentLoaded", async function () {
         selectedIds.clear();
     });
 
+    // --- CARREGAMENTO DAS BANDAS (TILES XYZ) ---
+
     document.getElementById("band-options")?.addEventListener("change", async (e) => {
         const val = e.target.value;
-        sentinelLayerGroup.clearLayers();
+        const myReqId = ++rasterReqId;
+
+        // remove camada anterior (tile layer)
+        if (currentRasterLayer) {
+            map.removeLayer(currentRasterLayer);
+            currentRasterLayer = null;
+        }
+
         if (val === "original") return;
-        const url = `/bandas/${projectId}/${val}?t=${new Date().getTime()}`;
-        try {
-            const resp = await fetch(url);
-            const arrayBuffer = await resp.arrayBuffer();
-            const georaster = await parseGeoraster(arrayBuffer);
-            const newLayer = new GeoRasterLayer({ 
-                georaster, opacity: 0.8, resolution: 256, keepBuffer: false,
-                pane: 'tilePane' // Mantém o raster abaixo do GeoJSON
-            });
-            sentinelLayerGroup.addLayer(newLayer);
-            if (segmentsLayer) segmentsLayer.bringToFront();
-        } catch (err) { console.error(err); }
+
+        // URL XYZ (cache-busting opcional)
+        const tilesUrl = `/tiles/${projectId}/${val}/{z}/{x}/{y}.png?t=${Date.now()}`;
+
+        const newLayer = L.tileLayer(tilesUrl, {
+            opacity: 0.8,
+            maxZoom: 22,
+            tileSize: 256,
+            pane: "sentinelPane",
+            updateWhenZooming: false,
+            keepBuffer: 2
+        });
+
+        // se enquanto isso o usuário trocou de novo, não aplica
+        if (myReqId !== rasterReqId) return;
+
+        currentRasterLayer = newLayer;
+        newLayer.addTo(map);
+
+        if (segmentsLayer) segmentsLayer.bringToFront();
     });
 
     document.getElementById("chkUncertainty")?.addEventListener("change", (e) => {
@@ -202,7 +222,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 alert("Propagação e Análise de Incerteza finalizadas.");
             }
         } catch (e) { console.error(e); }
-        btn.disabled = false; btn.textContent = "2. Propagar e Calcular AL";
+        btn.disabled = false; btn.textContent = "2. Propagar e calcular incerteza";
     });
 
     document.getElementById("btnSalvar")?.addEventListener("click", async () => {
