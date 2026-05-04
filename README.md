@@ -47,7 +47,7 @@ Acesse no navegador: http://localhost:5000
 ----Metodologia
 O fluxo de trabalho da ferramenta segue os padrões de sensoriamento remoto para classificação baseada em objetos (OBIA):
 
-Segmentação: Utiliza o algoritmo SLIC (Simple Linear Iterative Clustering) ou ASA (A-priori Shape Adaptive) para agrupar pixels em superpixels homogêneos.
+Segmentação: Utiliza o algoritmo SLIC (Simple Linear Iterative Clustering) ou SLIC 0 para agrupar pixels em superpixels homogêneos.
 
 Composição de Bandas: Permite visualização em Cor Real (RGB), Falsa Cor Vegetação (B8-B4-B3) e Solo/Urbano (B11-B8-B2) para facilitar a interpretação do analista.
 
