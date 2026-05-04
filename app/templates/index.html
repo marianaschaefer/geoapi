@@ -22,11 +22,14 @@
     .section-box { background: #f0f7f0; padding: 15px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #e0eee0; }
     h4 { margin-top: 0; color: #187318; border-bottom: 1px solid #c8e6c8; padding-bottom: 5px; margin-bottom: 10px; }
 
-    .project-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-bottom: 1px solid #eee; }
+    .project-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border-bottom: 1px solid #eee; }
     .project-link { flex-grow: 1; text-decoration: none; color: #333; }
     
     .btn-main { width: 100%; background: #187318; color: white; border: none; padding: 12px; cursor: pointer; font-weight: bold; border-radius: 4px; }
     
+    .btn-delete { background: none; border: none; color: #c0392b; cursor: pointer; font-size: 1.2em; padding: 5px; transition: transform 0.2s; }
+    .btn-delete:hover { transform: scale(1.2); }
+
     .preset-table { width: 100%; border-collapse: collapse; font-size: 0.7em; margin-top: 10px; background: white; cursor: pointer; }
     .preset-table th, .preset-table td { border: 1px solid #ddd; padding: 6px; text-align: center; }
     .preset-table th { background: #f4f4f4; color: #333; }
@@ -37,7 +40,7 @@
 </head>
 <body>
   <header style="display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: #f4f4f4; border-bottom: 1px solid #ddd;">
-    <div style="font-weight: bold; color: #187318; font-size: 1.2em;">GeoAPI v3.0</div>
+    <div style="font-weight: bold; color: #187318; font-size: 1.2em;">GeoAPI v3.1</div>
     <div>
       <span>Olá, <strong>{{ current_user.username }}</strong></span>
       <a href="{{ url_for('logout') }}" style="margin-left: 15px; color: #c0392b; text-decoration: none;">Sair</a>
@@ -51,7 +54,7 @@
     </div>
 
     <aside class="panel">
-      <h4>1. Localidade (IBGE) ou Desenho</h4>
+      <h4>1. Selecione a localidade (IBGE) ou desenhe no mapa</h4>
       <div class="section-box" style="background: #fdfdfd;">
         <select id="ibgeType" style="width: 100%; padding: 8px; margin-bottom: 8px;">
             <option value="municipios">Município</option>
@@ -64,15 +67,15 @@
         <small id="ibgeStatus" style="display: block; margin-top: 5px; color: #666;"></small>
       </div>
 
-      <h4>2. Configurar Projeto & Segmentação</h4>
+      <h4>2. Configurar projeto e segmentação</h4>
       <div class="section-box">
         <label>Nome do Projeto</label>
         <input type="text" id="projectName" placeholder="Ex: Analise LULC V1" style="width: 100%; padding: 8px; margin: 8px 0;">
         
-        <label>Algoritmo</label>
+        <label>Algoritmo de segmentação</label>
         <select id="algoritmoSelect" style="width: 100%; padding: 8px; margin: 8px 0;">
-          <option value="ASA">ASA (A-priori Shape Adaptive)</option>
           <option value="SLIC">SLIC (Simple Linear Iterative Clustering)</option>
+          <option value="SLICO">SLIC-0 / SLICO (compactação adaptativa)</option>
         </select>
 
         <div style="display: flex; gap: 10px; margin-top: 10px;">
@@ -81,8 +84,11 @@
             <input type="number" id="region_px" value="100" style="width: 100%; padding: 5px;">
           </div>
           <div style="flex: 1;">
-            <label style="font-size: 0.8em; font-weight: bold;">Compactness</label>
+            <label id="compactnessLabel" style="font-size: 0.8em; font-weight: bold;">Compactness</label>
             <input type="number" id="compactness" value="1.0" step="0.1" style="width: 100%; padding: 5px;">
+            <small id="compactnessHelp" style="display:block; color:#777; font-size:0.7em;">
+              Peso espacial do SLIC/SLIC-0.
+            </small>
           </div>
         </div>
 
@@ -92,14 +98,24 @@
         </div>
 
         <div style="margin-top: 10px; margin-bottom: 15px;">
-          <label style="font-size: 0.8em; font-weight: bold;">Máximo de Nuvens (%)</label>
+          <label style="font-size: 0.8em; font-weight: bold;">Data central da busca</label>
+          <input type="date" id="data_busca" style="width: 100%; padding: 5px;">
+        </div>
+
+        <div style="margin-top: 10px; margin-bottom: 15px;">
+          <label style="font-size: 0.8em; font-weight: bold;">Janela de busca (dias)</label>
+          <input type="number" id="janela_dias" value="30" min="1" max="365" style="width: 100%; padding: 5px;">
+        </div>
+
+        <div style="margin-top: 10px; margin-bottom: 15px;">
+          <label style="font-size: 0.8em; font-weight: bold;">Máximo de nuvens (%)</label>
           <input type="number" id="cloud_cover" value="10" min="0" max="100" style="width: 100%; padding: 5px;">
         </div>
 
         <button id="btnSegmentar" class="btn-main">CRIAR E PROCESSAR</button>
       </div>
 
-      <h4>Presets Sugeridos (Sentinel-2)</h4>
+      <h4>Presets sugeridos (Sentinel-2)</h4>
       <div class="section-box" style="padding: 5px; background: #fff;">
         <table class="preset-table" id="tablePresets">
           <thead>
@@ -113,23 +129,23 @@
           <tbody>
             <tr class="group-header"><td colspan="4">SLIC</td></tr>
             <tr data-algo="SLIC" data-sigma="0.5" data-comp="5" data-size="25">
-              <td><strong>Detalhe Máximo (Ex: Urbano)</strong></td><td>0.5</td><td>5</td><td>25</td></tr>
+              <td><strong>Detalhe máximo (ex: urbano)</strong></td><td>0.5</td><td>5</td><td>25</td></tr>
             <tr data-algo="SLIC" data-sigma="1.0" data-comp="10" data-size="50">
-              <td><strong>Detalhe Alto (Misto)</strong></td><td>1.0</td><td>10</td><td>50</td></tr>
+              <td><strong>Detalhe alto (misto)</strong></td><td>1.0</td><td>10</td><td>50</td></tr>
             <tr data-algo="SLIC" data-sigma="1.2" data-comp="15" data-size="100">
               <td><strong>Equilíbrio</strong></td><td>1.2</td><td>15</td><td>100</td></tr>
             <tr data-algo="SLIC" data-sigma="2.0" data-comp="20" data-size="200">
-              <td><strong>Detalhe Baixo (Áreas + homogêneas)</strong></td><td>2.0</td><td>20</td><td>200</td></tr>
+              <td><strong>Detalhe baixo (áreas + homogêneas)</strong></td><td>2.0</td><td>20</td><td>200</td></tr>
             
-            <tr class="group-header"><td colspan="4">ASA</td></tr>
-            <tr data-algo="ASA" data-sigma="0.5" data-comp="1.0" data-size="25">
-              <td><strong>Detalhe Máximo</strong></td><td>0.5</td><td>1.0</td><td>25</td></tr>
-            <tr data-algo="ASA" data-sigma="1.0" data-comp="1.0" data-size="50">
-              <td><strong>Detalhe Moderado</strong></td><td>1.0</td><td>1.0</td><td>50</td></tr>
-            <tr data-algo="ASA" data-sigma="1.2" data-comp="1.0" data-size="100">
+            <tr class="group-header"><td colspan="4">SLIC-0 / SLICO</td></tr>
+            <tr data-algo="SLICO" data-sigma="0.5" data-comp="1.0" data-size="25">
+              <td><strong>Detalhe máximo</strong></td><td>0.5</td><td>1.0</td><td>25</td></tr>
+            <tr data-algo="SLICO" data-sigma="1.0" data-comp="1.0" data-size="50">
+              <td><strong>Detalhe moderado</strong></td><td>1.0</td><td>1.0</td><td>50</td></tr>
+            <tr data-algo="SLICO" data-sigma="1.2" data-comp="1.0" data-size="100">
               <td><strong>Equilíbrio</strong></td><td>1.2</td><td>1.0</td><td>100</td></tr>
-            <tr data-algo="ASA" data-sigma="2.0" data-comp="1.0" data-size="200">
-              <td><strong>Detalhe Baixo</strong></td><td>2.0</td><td>1.0</td><td>200</td></tr>
+            <tr data-algo="SLICO" data-sigma="2.0" data-comp="1.0" data-size="200">
+              <td><strong>Detalhe baixo</strong></td><td>2.0</td><td>1.0</td><td>200</td></tr>
           </tbody>
         </table>
         <p style="font-size: 0.65em; color: #777; margin-top: 5px; padding: 0 5px;">
@@ -137,7 +153,7 @@
         </p>
       </div>
 
-      <h4>📁 Meus Projetos</h4>
+      <h4>📁 Meus projetos</h4>
       <ul style="list-style: none; padding: 0; margin-top: 10px;">
         {% for p in projetos %}
         <li class="project-item">
@@ -145,6 +161,10 @@
             <strong>{{ p.name }}</strong><br>
             <small>{{ p.date_created.strftime('%d/%m/%Y %H:%M') }}</small>
           </a>
+          <form action="{{ url_for('excluir_projeto', project_id=p.id) }}" method="POST" 
+                onsubmit="return confirm('Tem certeza que deseja excluir permanentemente este projeto?');">
+            <button type="submit" class="btn-delete" title="Excluir Projeto">&#128465;</button>
+          </form>
         </li>
         {% endfor %}
       </ul>
@@ -153,7 +173,6 @@
 
   <script>
     document.querySelectorAll('#tablePresets tbody tr').forEach(row => {
-      // Verifica se a linha possui o atributo data-algo antes de adicionar o evento
       if (row.dataset.algo) {
         row.addEventListener('click', () => {
           document.querySelectorAll('#tablePresets tbody tr').forEach(r => r.classList.remove('active-preset'));
@@ -163,6 +182,8 @@
           document.getElementById('sigma').value = row.dataset.sigma;
           document.getElementById('compactness').value = row.dataset.comp;
           document.getElementById('region_px').value = row.dataset.size;
+
+          document.getElementById("algoritmoSelect").dispatchEvent(new Event("change"));
           
           console.log(`Preset aplicado: ${row.dataset.algo}`);
         });

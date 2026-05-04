@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>GEO APP - Registro</title>
+    <title>GeoAPI - Registro</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
         .auth-container { max-width: 400px; margin: 100px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
@@ -15,9 +15,9 @@
 </head>
 <body style="background-color: #f4f7f4;">
     <div class="auth-container">
-        <h2>Criar Conta</h2>
+        <h2>Criar conta</h2>
         <form action="{{ url_for('register') }}" method="POST">
-            <label>Nome de Usuário</label>
+            <label>Nome de usuário</label>
             <input type="text" name="username" class="auth-input" required placeholder="Ex: gustavo_neves">
             
             <label>E-mail</label>

@@ -129,9 +129,13 @@ def api_segmentar():
 
     try:
         processar_segmentacao_completa(
-            output_dir=str(out_dir), bbox=bbox, aoi_geojson=data.get("aoi_geojson"),
+            output_dir=str(out_dir),
+            bbox=bbox,
+            aoi_geojson=data.get("aoi_geojson"),
             algoritmo=data.get("algoritmo", "SLIC"),
             cloud_cover=data.get("cloud_cover", 10),
+            data_busca=data.get("data_busca"),
+            janela_dias=data.get("janela_dias", 30),
             sigma=data.get("sigma", 1.0),
             compactness=data.get("compactness", 1.0),
             region_px=data.get("region_px", 100)
@@ -193,8 +197,9 @@ def baixar_arquivo_projeto(project_id: int, filename: str):
             caminho_tif = out_dir / "classificacao_final.tif"
             print(f"Tentando baixar: {caminho_tif} | Existe? {caminho_tif.exists()}")
             if not caminho_tif.exists():
-                flash("O mapa rasterizado (.tif) não foi encontrado no servidor. Tente 'Propagar' novamente.", "danger")
-                return redirect(url_for('resultado', project_id=project_id))
+                # Alterado para não usar flash/redirect e evitar mensagens no login
+                return f"Erro: O arquivo {filename} ainda não foi gerado pelo servidor.", 404
+
             return send_file(
                 str(caminho_tif), 
                 as_attachment=True, 

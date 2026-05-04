@@ -30,6 +30,20 @@ document.addEventListener("DOMContentLoaded", () => {
     let lastAOI = null;
     let ibgeLayer = null;
 
+    function atualizarLabelCompactness() {
+        const algo = document.getElementById("algoritmoSelect")?.value;
+        const label = document.getElementById("compactnessLabel");
+        const help = document.getElementById("compactnessHelp");
+        const input = document.getElementById("compactness");
+
+        if (!label || !help || !input) return;
+        label.textContent = "Compactness";
+        help.textContent = "Peso espacial do SLIC/SLIC-0.";
+
+        
+    }
+
+
     // EVENTO: Desenho manual no mapa
     map.on(L.Draw.Event.CREATED, (e) => {
         // Limpa buscas anteriores do IBGE
@@ -78,6 +92,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    document.getElementById("algoritmoSelect")?.addEventListener("change", atualizarLabelCompactness);
+    atualizarLabelCompactness();
+
     // EVENTO: Disparo do processamento
     const btnSeg = document.getElementById("btnSegmentar");
     btnSeg?.addEventListener("click", async () => {
@@ -117,7 +134,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 region_px: parseInt(document.getElementById("region_px").value) || 30,
                 compactness: parseFloat(document.getElementById("compactness").value) || 1.0,
                 sigma: parseFloat(document.getElementById("sigma").value) || 1.0,
-                cloud_cover: parseInt(document.getElementById("cloud_cover").value) || 10
+                cloud_cover: parseInt(document.getElementById("cloud_cover").value) || 10,
+                data_busca: document.getElementById("data_busca").value || null,
+                janela_dias: parseInt(document.getElementById("janela_dias").value) || 30
             };
 
             const resp = await fetch("/api/segmentar", {

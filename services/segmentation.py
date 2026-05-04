@@ -73,12 +73,20 @@ def _compute_ndvi(img_chw):
 
 # --- DOWNLOAD E COMPOSIÇÕES ---
 
-def baixar_bandas_earthsearch(output_dir, dias, resolucao, bbox, max_cloud):
+def baixar_bandas_earthsearch(output_dir, dias, resolucao, bbox, max_cloud, data_busca=None):
     bbox = [float(x) for x in bbox]
     aoi_sh = BBox(bbox=bbox, crs=CRS.WGS84)
     w, h = bbox_to_dimensions(aoi_sh, resolution=(int(resolucao), int(resolucao)))
-    dt_to = datetime.utcnow().date()
-    dt_from = dt_to - timedelta(days=int(dias))
+    dias = int(dias)
+
+    if data_busca:
+        data_central = datetime.strptime(data_busca, "%Y-%m-%d").date()
+        meia_janela = dias // 2
+        dt_from = data_central - timedelta(days=meia_janela)
+        dt_to = data_central + timedelta(days=meia_janela)
+    else:
+        dt_to = datetime.utcnow().date()
+        dt_from = dt_to - timedelta(days=dias)
     
     client = Client.open("https://earth-search.aws.element84.com/v1")
     items = _search_items_sorted(client, bbox, dt_from, dt_to, int(max_cloud))
@@ -130,11 +138,21 @@ def aplicar_segmentacao_e_extrair_features(image_path, output_dir, aoi_geojson, 
     
     H, W, _ = stack.shape
     n_seg = max(2, int((H * W) / (int(region_px) ** 2)))
-    segments = slic(stack, n_segments=n_seg, compactness=float(compactness), sigma=float(sigma), 
-                    start_label=1, channel_axis=-1, slic_zero=(algoritmo.upper() == "ASA"))
+    alg = algoritmo.upper()
+
+   
+    segments = slic(
+        stack,
+        n_segments=n_seg,
+        compactness=float(compactness),
+        sigma=float(sigma),
+        start_label=1,
+        channel_axis=-1,
+        slic_zero=(alg in ["SLICO", "SLIC-0", "SLIC0"])
+    )
 
     # Vetorização
-    shapes_gen = shapes(segments.astype(np.uint16), mask=np.any(img > 0, axis=0), transform=transform)
+    shapes_gen = shapes(segments.astype(np.int32), mask=np.any(img > 0, axis=0), transform=transform)
     geoms = [{"geometry": shp_shape(g), "properties": {"segment_id": int(v)}} for g, v in shapes_gen]
     gdf = gpd.GeoDataFrame.from_features(geoms, crs=crs)
 
@@ -166,7 +184,19 @@ def aplicar_segmentacao_e_extrair_features(image_path, output_dir, aoi_geojson, 
     return len(gdf)
 
 def processar_segmentacao_completa(output_dir, bbox, aoi_geojson=None, algoritmo='SLIC', **kwargs):
-    bandas = baixar_bandas_earthsearch(output_dir, kwargs.get('dias', 180), 10, bbox, kwargs.get('max_cloud', 80))
+
+    janela_dias = kwargs.get("janela_dias", kwargs.get("dias", 180))
+    data_busca = kwargs.get("data_busca")
+    cloud_cover = kwargs.get("cloud_cover", kwargs.get("max_cloud", 80))
+
+    bandas = baixar_bandas_earthsearch(
+        output_dir=output_dir,
+        dias=janela_dias,
+        resolucao=10,
+        bbox=bbox,
+        max_cloud=cloud_cover,
+        data_busca=data_busca
+    )
     
     # Criar Composições para o Usuário
     criar_composicao_custom(['B04','B03','B02'], output_dir, 'RGB_composicao_8bit.tif')
